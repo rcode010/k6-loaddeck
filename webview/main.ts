@@ -1,3 +1,4 @@
+import { workloadBuilder } from "./builder";
 import { compareRuns } from "../src/comparison";
 import {
   defaultTest,
@@ -145,6 +146,9 @@ function configForm(): HTMLElement {
     [
       ["smoke", "Smoke · quick sanity check"],
       ["load", "Load · steady traffic"],
+      ["stress", "Stress · staged ramp to twice the VUs"],
+      ["spike", "Spike · abrupt increase and recovery"],
+      ["soak", "Soak · sustained traffic; choose a long duration"],
     ],
     draft.testKind,
   );
@@ -221,10 +225,16 @@ function configForm(): HTMLElement {
       'Example: {"http_req_duration":["p(95)<500"],"checks":["rate>0.99"]}',
     ),
   );
+  const builder = workloadBuilder(draft);
+  advanced.append(builder);
   const error = element("p", undefined, "error");
   error.setAttribute("role", "alert");
   const read = (): QuickTest => {
-    draft = {
+    Object.assign(draft, {
+      ...draft,
+      scenarios: draft.scenarios,
+      checks: draft.checks,
+      thresholdRules: draft.thresholdRules,
       name: name.value,
       url: url.value,
       method: method.value,
@@ -237,7 +247,7 @@ function configForm(): HTMLElement {
       bodyMode: bodyMode.value as QuickTest["bodyMode"],
       expectedStatus: expected.value ? Number(expected.value) : undefined,
       thresholds: JSON.parse(thresholds.value),
-    };
+    });
     remember();
     return draft;
   };

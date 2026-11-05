@@ -1,3 +1,4 @@
+import type { Scenario, CheckRule, ThresholdRule } from "./workload";
 export type TestKind =
   "smoke" | "load" | "stress" | "spike" | "soak" | "custom";
 export type RunState =
@@ -9,6 +10,9 @@ export type RunState =
   | "execution_failed"
   | "cancelled";
 export interface QuickTest {
+  scenarios?: Scenario[];
+  checks?: CheckRule[];
+  thresholdRules?: ThresholdRule[];
   name: string;
   url: string;
   method: string;

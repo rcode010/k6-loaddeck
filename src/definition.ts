@@ -1,15 +1,16 @@
+import {
+  validateScenarios,
+  validateChecks,
+  compileThresholds,
+  defaultScenario,
+  scenarioOptions,
+  checkExpression,
+} from "./workload";
 import { createHash } from "node:crypto";
 import type { QuickTest } from "./model";
 
-export function durationSeconds(value: string): number {
-  if (!/^(?:\d+(?:\.\d+)?(?:ms|s|m|h))+$/.test(value)) return NaN;
-  return [...value.matchAll(/(\d+(?:\.\d+)?)(ms|s|m|h)/g)].reduce(
-    (total, match) =>
-      total +
-      Number(match[1]) * ({ ms: 0.001, s: 1, m: 60, h: 3600 }[match[2]!] ?? 0),
-    0,
-  );
-}
+export { durationSeconds } from "./duration";
+import { durationSeconds } from "./duration";
 export function validateQuickTest(value: unknown): QuickTest {
   if (!value || typeof value !== "object")
     throw new Error("Invalid test configuration.");
@@ -124,6 +125,22 @@ export function validateQuickTest(value: unknown): QuickTest {
         throw new Error(`Thresholds: invalid expression for ${metric}.`);
     }
   }
+  if (c.scenarios) {
+    validateScenarios(c.scenarios);
+    for (const scenario of c.scenarios) {
+      const target = new URL(scenario.url || c.url);
+      if (
+        !["http:", "https:"].includes(target.protocol) ||
+        target.username ||
+        target.password
+      )
+        throw new Error(
+          "Scenario target must be an HTTP URL without embedded credentials.",
+        );
+    }
+  }
+  if (c.checks) validateChecks(c.checks);
+  if (c.thresholdRules) compileThresholds(c.thresholdRules);
   return {
     ...c,
     url: url.toString(),
@@ -158,31 +175,43 @@ export function safeConfig(config: QuickTest): QuickTest | undefined {
   };
 }
 export function generateScript(c: QuickTest): string {
+  const scenarios = (c.scenarios ?? [defaultScenario(c)]).filter(
+    (s) => s.enabled,
+  );
+  const thresholds = {
+    ...c.thresholds,
+    ...compileThresholds(c.thresholdRules ?? []),
+  };
+  const options = {
+    scenarios: Object.fromEntries(
+      scenarios.map((s, i) => [s.name, scenarioOptions(s, i)]),
+    ),
+    thresholds,
+    summaryTrendStats: ["avg", "min", "max", "med", "p(95)", "p(99)"],
+    systemTags: [
+      "status",
+      "method",
+      "name",
+      "scenario",
+      "expected_response",
+      "proto",
+    ],
+  };
   const headers = Object.entries(c.headers)
     .map(
       ([key, val]) =>
         `${JSON.stringify(key)}: ${/^\$\{[A-Z_][A-Z0-9_]*\}$/.test(val) ? `__ENV[${JSON.stringify(val.slice(2, -1))}]` : JSON.stringify(val)}`,
     )
     .join(", ");
-  const duration = durationSeconds(c.duration);
-  const workload = ["stress", "spike"].includes(c.testKind)
-    ? {
-        executor: "ramping-vus",
-        startVUs: 0,
-        stages:
-          c.testKind === "stress"
-            ? [
-                { duration: c.duration, target: c.vus },
-                { duration: c.duration, target: c.vus * 2 },
-                { duration: c.duration, target: 0 },
-              ]
-            : [
-                { duration: "1s", target: c.vus },
-                { duration: c.duration, target: c.vus },
-                { duration: "1s", target: 0 },
-              ],
-      }
-    : { executor: "constant-vus", vus: c.vus, duration: c.duration };
-  if (!Number.isFinite(duration)) throw new Error("Invalid duration.");
-  return `import http from 'k6/http';\nimport { check, sleep } from 'k6';\n\nexport const options = ${JSON.stringify({ scenarios: { main: workload }, thresholds: c.thresholds, summaryTrendStats: ["avg", "min", "max", "med", "p(95)", "p(99)"], systemTags: ["status", "method", "name", "scenario", "expected_response", "proto"] }, null, 2)};\n\nexport default function () {\n  const response = http.request(${JSON.stringify(c.method)}, ${JSON.stringify(c.url)}, ${c.body ? JSON.stringify(c.body) : "null"}, { headers: { ${headers} }, tags: { name: 'LoadDeck request' }, timeout: '30s' });\n${c.expectedStatus !== undefined ? `  check(response, { ${JSON.stringify(`status is ${c.expectedStatus}`)}: r => r.status === ${c.expectedStatus} });\n` : ""}  sleep(${c.sleep});\n}\n\nexport function handleSummary(data) {\n  return __ENV.LOADDECK_SUMMARY ? { [__ENV.LOADDECK_SUMMARY]: JSON.stringify(data) } : { stdout: JSON.stringify(data, null, 2) };\n}\n`;
+  const checks = (c.checks ?? [])
+    .filter((r) => r.enabled)
+    .map(
+      (rule) =>
+        `${JSON.stringify(rule.name)}: r => safeCheck(() => ${checkExpression(rule, "http")})`,
+    );
+  if (c.expectedStatus !== undefined)
+    checks.push(
+      `${JSON.stringify(`status is ${c.expectedStatus}`)}: r => r.status === ${c.expectedStatus}`,
+    );
+  return `import http from 'k6/http';\nimport { check, sleep } from 'k6';\n\nexport const options = ${JSON.stringify(options, null, 2)};\n\nfunction safeCheck(fn) { try { return Boolean(fn()); } catch { return false; } }\nfunction jsonPath(value, path) { return path.split('.').reduce((v, key) => v == null ? undefined : v[key], value); }\n\n${scenarios.map((s, i) => `export function scenario_${i}() {\n  const response = http.request(${JSON.stringify(c.method)}, ${JSON.stringify(s.url || c.url)}, ${c.body ? JSON.stringify(c.body) : "null"}, { headers: { ${headers} }, tags: { name: ${JSON.stringify(s.name)} }, timeout: '30s' });\n${checks.length ? `  check(response, { ${checks.join(", ")} });\n` : ""}${s.executor.includes("arrival-rate") ? "" : `  sleep(${c.sleep});\n`}}`).join("\n\n")}\n\nexport default scenario_0;\n\nexport function handleSummary(data) {\n  return __ENV.LOADDECK_SUMMARY ? { [__ENV.LOADDECK_SUMMARY]: JSON.stringify(data) } : { stdout: JSON.stringify(data, null, 2) };\n}\n`;
 }

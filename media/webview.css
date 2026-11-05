@@ -337,3 +337,16 @@ pre {
     border: 1px solid ButtonText;
   }
 }
+fieldset {
+  border: 1px solid var(--vscode-panel-border);
+  border-radius: 6px;
+  padding: 16px;
+  margin: 16px 0;
+}
+legend {
+  font-weight: 600;
+  padding: 0 8px;
+}
+fieldset button {
+  margin: 6px 6px 6px 0;
+}
