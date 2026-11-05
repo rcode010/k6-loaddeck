@@ -1,3 +1,4 @@
+import { defaultScenario } from "../src/workload";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
@@ -80,6 +81,81 @@ test(
       );
       assert.ok(
         received.every((value) => Object.hasOwn(value as object, "__proto__")),
+      );
+      const tagged = await new K6Runner().run(
+        process.env.LOADDECK_TEST_K6!,
+        "fixture",
+        () => undefined,
+        {
+          config: validateQuickTest({
+            ...config,
+            checks: config.checks!.map((check) => ({
+              ...check,
+              tags: JSON.parse('{"__proto__":"api"}'),
+            })),
+            scenarios: [
+              {
+                ...defaultScenario(config),
+                tags: JSON.parse('{"__proto__":"load"}'),
+              },
+            ],
+            thresholdRules: [
+              {
+                metric: "checks",
+                aggregation: "rate",
+                operator: "==",
+                value: 1,
+                scope: "__proto__:api",
+                abortOnFail: false,
+                delayAbortEval: "",
+              },
+              {
+                metric: "http_req_duration",
+                aggregation: "p(95)",
+                operator: "<",
+                value: 500,
+                scope: "__proto__:load",
+                abortOnFail: false,
+                delayAbortEval: "",
+              },
+            ],
+          }),
+        },
+      );
+      assert.equal(tagged.state, "completed", tagged.logs.join("\n"));
+      assert.ok(
+        tagged.thresholds.some(
+          (rule) => rule.metric === "checks{__proto__:api}" && rule.ok,
+        ),
+      );
+      const authenticated = await new K6Runner().run(
+        process.env.LOADDECK_TEST_K6!,
+        "fixture",
+        () => undefined,
+        {
+          config: validateQuickTest({
+            ...config,
+            headers: {},
+            authentication: {
+              mode: "apiKey",
+              usernameVariable: "",
+              secretVariable: "LD_PROTO",
+              keyName: "__proto__",
+              placement: "header",
+              tokenUrl: "",
+              scope: "",
+              audience: "",
+              certificateVariable: "",
+              privateKeyVariable: "",
+            },
+          }),
+          environment: { LD_PROTO: "literal-header" },
+        },
+      );
+      assert.equal(
+        authenticated.state,
+        "completed",
+        authenticated.logs.join("\n"),
       );
       const mapped = await new K6Runner().run(
         process.env.LOADDECK_TEST_K6!,

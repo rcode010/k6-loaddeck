@@ -66,7 +66,7 @@ export function generateScript(c: QuickTest): string {
   if (protocol === "ws") imports.push("import ws from 'k6/ws';");
   if (protocol === "grpc") imports.push("import grpc from 'k6/net/grpc';");
   if (c.dataset?.file) imports.push("import { SharedArray } from 'k6/data';");
-  let init = `export const options = ${json(options, null, 2)};\n`;
+  let init = `export const options = ${json(options, null, 2).replaceAll('"__proto__":', '["__proto__"]:')};\n`;
   if (auth?.mode === "mtls")
     init += `options.tlsAuth = [{ cert: required(${json(auth.certificateVariable)}), key: required(${json(auth.privateKeyVariable)}) }];\n`;
   if (c.dataset?.file)
@@ -109,7 +109,7 @@ function oauth() { if (Date.now() < tokenExpiry) return oauthToken; const respon
               : "exec.scenario.iterationInTest";
         row = `if (!rows.length) throw new Error('Dataset is empty');\n  const position = ${position};\n  ${c.dataset.exhaustion === "fail" ? "if (position >= rows.length) throw new Error('Dataset exhausted');" : ""}\n  const row = { ...JSON.parse(${json(json(c.dataset.variables))}), ...rows[position % rows.length] };`;
       }
-      let setup = `${row}\n  let target = template(${json(s.url || c.url)}, row);\n  const headers = { ${headers} };\n`;
+      let setup = `${row}\n  let target = template(${json(s.url || c.url)}, row);\n  const headers = Object.assign(Object.create(null), { ${headers} });\n`;
       if (c.bodyMode === "json" && c.body)
         setup += `  if (!headers['Content-Type']) headers['Content-Type'] = 'application/json';\n`;
       if (auth && auth.mode !== "none") {
