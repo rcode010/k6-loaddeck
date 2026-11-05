@@ -353,3 +353,11 @@ legend {
 fieldset button {
   margin: 6px 6px 6px 0;
 }
+
+.chart-point {
+  fill: var(--vscode-charts-blue, var(--vscode-focusBorder));
+  opacity: 0.35;
+}
+.chart-point:hover {
+  opacity: 1;
+}

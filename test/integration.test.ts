@@ -116,6 +116,12 @@ test(
       assert.equal(reopened.length, 2);
       assert.equal(reopened[0]?.id, failure.id);
       assert.ok(reopened[0]?.series.length);
+      assert.ok(reopened[0]?.scenarioSeries?.main?.length);
+      assert.ok(
+        reopened[0]?.scenarioSeries?.main?.every(
+          (bucket) => bucket.widthSeconds !== undefined,
+        ),
+      );
       const comparison = compareRuns(first, {
         ...first,
         id: "candidate",

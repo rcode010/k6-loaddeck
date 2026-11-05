@@ -1,7 +1,13 @@
+import {
+  seriesPoints,
+  sharedChartScale,
+  type ChartMetric,
+  type ChartScale,
+} from "../src/series";
 import { outcomeText, thresholdText } from "../src/outcome";
 import { integrationBuilder } from "./integrations";
 import { workloadBuilder } from "./builder";
-import { compareRuns } from "../src/comparison";
+import { compareRuns, commonScenarios, scopedRun } from "../src/comparison";
 import {
   defaultTest,
   type QuickTest,
@@ -29,6 +35,10 @@ let fromDate = "";
 let toDate = "";
 let baseline = "";
 let candidate = "";
+let comparisonScenario = "";
+let dashboardScenario = "";
+let dashboardRunId = "";
+let comparisonChart: ChartMetric = "latency";
 let initial = true;
 const post = (message: ClientMessage) => api.postMessage(message);
 const element = <K extends keyof HTMLElementTagNameMap>(
@@ -423,35 +433,13 @@ function metrics(run: Run): HTMLElement {
 }
 function chart(
   run: Run,
-  key: "requests" | "latency" | "failures" | "vus",
+  key: ChartMetric,
   label: string,
+  scale?: ChartScale,
 ): HTMLElement {
   const card = element("section", undefined, "chart card");
   card.append(element("h3", label));
-  const values = run.series
-    .map((b, i) => {
-      const width =
-        (run.series[i + 1]?.elapsed ??
-          b.elapsed +
-            (run.series[i - 1] ? b.elapsed - run.series[i - 1]!.elapsed : 1)) -
-        b.elapsed;
-      return {
-        x: b.elapsed,
-        y:
-          key === "requests"
-            ? b.requests / Math.max(width, 1)
-            : key === "latency"
-              ? b.latencyCount
-                ? b.latencySum / b.latencyCount
-                : undefined
-              : key === "failures"
-                ? b.failureCount
-                  ? (100 * b.failures) / b.failureCount
-                  : undefined
-                : b.vus,
-      };
-    })
-    .filter((p): p is { x: number; y: number } => p.y !== undefined);
+  const values = seriesPoints(run, key);
   if (!values.length) {
     card.append(element("p", "No measurements available.", "muted"));
     return card;
@@ -463,8 +451,9 @@ function chart(
     "aria-label",
     `${label}, elapsed seconds, peak ${format(Math.max(...values.map((p) => p.y)))}`,
   );
-  const maximum = Math.max(...values.map((p) => p.y), 0.001),
-    end = Math.max(...values.map((p) => p.x), 1);
+  const { maximum, end } = scale ?? sharedChartScale([run], key);
+  svg.setAttribute("data-axis-max", String(maximum));
+  svg.setAttribute("data-axis-end", String(end));
   const line = document.createElementNS(svg.namespaceURI, "polyline");
   line.setAttribute(
     "points",
@@ -474,6 +463,19 @@ function chart(
   );
   line.setAttribute("class", "chart-line");
   svg.append(line);
+  for (const point of values.filter(
+    (_, index) => index % Math.max(1, Math.ceil(values.length / 120)) === 0,
+  )) {
+    const marker = document.createElementNS(svg.namespaceURI, "circle");
+    marker.setAttribute("cx", String(40 + (point.x / end) * 540));
+    marker.setAttribute("cy", String(145 - (point.y / maximum) * 120));
+    marker.setAttribute("r", "4");
+    marker.setAttribute("class", "chart-point");
+    const title = document.createElementNS(svg.namespaceURI, "title");
+    title.textContent = `${format(point.x)}s · ${format(point.y)}`;
+    marker.append(title);
+    svg.append(marker);
+  }
   const text = (x: number, y: number, value: string) => {
     const t = document.createElementNS(svg.namespaceURI, "text");
     t.setAttribute("x", String(x));
@@ -484,7 +486,7 @@ function chart(
   text(2, 20, format(maximum, 1));
   text(25, 150, "0");
   text(40, 175, "0s");
-  text(530, 175, `${format(end, 0)}s`);
+  text(530, 175, `${format(end, 1)}s`);
   card.append(svg);
   const details = element("details");
   details.append(element("summary", "View measurements"));
@@ -514,6 +516,10 @@ function dashboard(): HTMLElement {
       ),
     );
     return main;
+  }
+  if (dashboardRunId !== run.id) {
+    dashboardRunId = run.id;
+    dashboardScenario = "";
   }
   main.append(
     heading(run.name, `${run.testKind.toUpperCase()} · ${run.target}`),
@@ -545,6 +551,8 @@ function dashboard(): HTMLElement {
       ),
     );
   if (run.scenarioMetrics && Object.keys(run.scenarioMetrics).length) {
+    if (dashboardScenario && !run.scenarioMetrics[dashboardScenario])
+      dashboardScenario = "";
     const filter = select(
       [
         ["", "All scenarios"],
@@ -552,24 +560,35 @@ function dashboard(): HTMLElement {
           (name) => [name, name] as [string, string],
         ),
       ],
-      "",
+      dashboardScenario,
     );
     filter.setAttribute("aria-label", "Scenario metrics");
     const scoped = element("div");
-    filter.addEventListener("change", () => {
+    const showScope = () => {
       scoped.replaceChildren();
-      if (filter.value)
-        scoped.append(
-          metrics({
-            ...run,
-            metrics: run.scenarioMetrics![filter.value]!,
-            protocol: "http",
-          }),
-          notice(
-            "Scenario values are observed aggregates; VU counts and final percentiles may be unavailable at this scope.",
-          ),
+      if (!dashboardScenario) return;
+      const scopedData = scopedRun(run, dashboardScenario);
+      scoped.append(
+        element("h2", `Scenario: ${dashboardScenario}`),
+        metrics(scopedData),
+        notice(
+          "Scenario values are observed aggregates over the full run window. VU counts and final percentiles may be unavailable at this scope.",
+        ),
+      );
+      if (run.protocol !== "ws" && run.protocol !== "grpc") {
+        const charts = element("div", undefined, "charts");
+        charts.append(
+          chart(scopedData, "latency", "Scenario average latency · ms"),
+          chart(scopedData, "requests", "Scenario throughput · req/s"),
         );
+        scoped.append(charts);
+      }
+    };
+    filter.addEventListener("change", () => {
+      dashboardScenario = filter.value;
+      showScope();
     });
+    showScope();
     main.append(field("Scenario", filter), scoped);
   }
   if (run.metrics.droppedIterations !== undefined)
@@ -921,8 +940,29 @@ function comparison(): HTMLElement {
     main.append(notice("Select two runs to view their recorded metrics."));
     return main;
   }
+  const scenarios = commonScenarios(first, second);
+  if (comparisonScenario && !scenarios.includes(comparisonScenario))
+    comparisonScenario = "";
+  const scope = select(
+    [
+      ["", "All scenarios"],
+      ...scenarios.map((name) => [name, name] as [string, string]),
+    ],
+    comparisonScenario,
+  );
+  scope.addEventListener("change", () => {
+    comparisonScenario = scope.value;
+    render();
+  });
+  main.append(field("Comparison scenario", scope));
+  if (comparisonScenario)
+    main.append(
+      notice(
+        "Scenario values are observed aggregates over the full run window. Global percentiles and VU counts are not substituted when scenario measurements are unavailable.",
+      ),
+    );
   try {
-    const comparison = compareRuns(first, second);
+    const comparison = compareRuns(first, second, comparisonScenario);
     main.append(
       notice(
         comparison.comparable
@@ -979,11 +1019,65 @@ function comparison(): HTMLElement {
         `Baseline: ${status(first)} · Candidate: ${status(second)}. Durations: ${format(first.elapsedMs / 1000)}s / ${format(second.elapsedMs / 1000)}s.`,
       ),
     );
-    const charts = element("div", undefined, "charts");
-    charts.append(
-      chart(first, "latency", "Baseline latency · elapsed seconds"),
-      chart(second, "latency", "Candidate latency · elapsed seconds"),
+    const scopedFirst = scopedRun(first, comparisonScenario),
+      scopedSecond = scopedRun(second, comparisonScenario);
+    const chartSelector = select(
+      [
+        ["latency", "Average latency · ms"],
+        ["requests", "Throughput · req/s"],
+        ["failures", "HTTP failure rate · %"],
+        ["vus", "Virtual users"],
+      ],
+      comparisonChart,
     );
+    chartSelector.addEventListener("change", () => {
+      comparisonChart = chartSelector.value as ChartMetric;
+      render();
+    });
+    const charts = element("div", undefined, "charts");
+    if (first.protocol === "ws" || first.protocol === "grpc")
+      charts.append(
+        notice(
+          "Protocol summary metrics are compared above. Protocol-specific time series are not retained in this preview.",
+        ),
+      );
+    else {
+      main.append(
+        field("Comparison chart", chartSelector),
+        notice(
+          "Charts use identical axes and elapsed seconds since each run started. Different run durations remain visible.",
+        ),
+      );
+      const scale = sharedChartScale(
+        [scopedFirst, scopedSecond],
+        comparisonChart,
+      );
+      charts.append(
+        chart(
+          scopedFirst,
+          comparisonChart,
+          "Baseline · " + chartSelector.selectedOptions[0]!.textContent,
+          scale,
+        ),
+        chart(
+          scopedSecond,
+          comparisonChart,
+          "Candidate · " + chartSelector.selectedOptions[0]!.textContent,
+          scale,
+        ),
+      );
+      if (
+        comparisonChart === "requests" &&
+        [scopedFirst, scopedSecond].some((run) =>
+          run.series.some((bucket) => bucket.widthSeconds === undefined),
+        )
+      )
+        charts.append(
+          notice(
+            "Older stored results lack exact bucket widths, so their throughput chart is unavailable. Recorded summary requests/sec remains available.",
+          ),
+        );
+    }
     main.append(
       charts,
       button("Open baseline", () => post({ type: "open", id: first.id })),

@@ -257,6 +257,26 @@ test(
       await page
         .getByText("Comparable conditions.", { exact: false })
         .waitFor({ state: "visible" });
+      await page
+        .getByLabel("Comparison scenario", { exact: true })
+        .selectOption("main");
+      const percentile = page
+        .getByRole("row")
+        .filter({ hasText: "p95 latency" });
+      assert.equal(await percentile.locator("td").nth(1).innerText(), "N/A");
+      await page
+        .getByLabel("Comparison chart", { exact: true })
+        .selectOption("requests");
+      const charts = page.locator(".chart svg");
+      assert.equal(await charts.count(), 2);
+      assert.equal(
+        await charts.nth(0).getAttribute("data-axis-max"),
+        await charts.nth(1).getAttribute("data-axis-max"),
+      );
+      assert.equal(
+        await charts.nth(0).getAttribute("data-axis-end"),
+        await charts.nth(1).getAttribute("data-axis-end"),
+      );
       view.screen = "run";
       view.selected = run;
       await send();

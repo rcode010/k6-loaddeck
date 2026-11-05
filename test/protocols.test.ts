@@ -1,3 +1,4 @@
+import { compareRuns } from "../src/comparison";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
@@ -146,6 +147,26 @@ test(
       assert.ok(
         Object.keys(grpcRun.protocolMetrics ?? {}).some((k) =>
           k.startsWith("grpc_"),
+        ),
+      );
+      const wsComparison = compareRuns(wsRun, { ...wsRun, id: "ws-candidate" });
+      assert.ok(
+        wsComparison.rows.some(
+          (row) => row.key === "ws_msgs_received.count" && row.baseline! > 0,
+        ),
+      );
+      const grpcComparison = compareRuns(grpcRun, {
+        ...grpcRun,
+        id: "grpc-candidate",
+      });
+      assert.ok(
+        grpcComparison.rows.some(
+          (row) => row.key === "grpc_req_duration.avg" && row.unit === "ms",
+        ),
+      );
+      assert.ok(
+        Object.keys(wsRun.scenarioProtocolMetrics?.main ?? {}).some((key) =>
+          key.startsWith("ws_"),
         ),
       );
     } finally {

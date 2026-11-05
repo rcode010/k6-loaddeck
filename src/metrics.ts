@@ -93,6 +93,7 @@ export class Aggregator {
     ) {
       const scoped =
         this.scopes.get(scenario) ?? new Aggregator(this.startedAt, true);
+      scoped.metricTypes = this.metricTypes;
       this.scopes.set(scenario, scoped);
       scoped.add(record);
     }
@@ -160,7 +161,7 @@ export class Aggregator {
         b.vus = value;
         break;
       case "checks":
-        if (r.data.tags?.check) {
+        if (!this.scoped && r.data.tags?.check) {
           const name = r.data.tags.check,
             group = r.data.tags.group,
             scenario = r.data.tags.scenario,
@@ -192,7 +193,7 @@ export class Aggregator {
         return;
     }
     this.buckets.set(elapsed, b);
-    while (this.buckets.size > 600) this.compact();
+    while (this.buckets.size > (this.scoped ? 120 : 600)) this.compact();
   }
   private compact(): void {
     this.bucketWidth *= 2;
@@ -224,18 +225,26 @@ export class Aggregator {
     checkResults: CheckResult[];
     series: Bucket[];
     scenarioMetrics: Record<string, Metrics>;
+    scenarioSeries: Record<string, Bucket[]>;
+    scenarioProtocolMetrics: Record<string, Record<string, number>>;
     protocolMetrics: Record<string, number>;
   } {
+    const scenarios = [...this.scopes].map(
+      ([name, collector]) => [name, collector.snapshot(elapsedMs)] as const,
+    );
     return {
       metricCatalog: [...this.metricCatalog.values()],
       checkResults: [...this.checkResults.values()].map((result) => ({
         ...result,
       })),
       scenarioMetrics: Object.fromEntries(
-        [...this.scopes].map(([name, collector]) => [
-          name,
-          collector.snapshot(elapsedMs).metrics,
-        ]),
+        scenarios.map(([name, data]) => [name, data.metrics]),
+      ),
+      scenarioSeries: Object.fromEntries(
+        scenarios.map(([name, data]) => [name, data.series]),
+      ),
+      scenarioProtocolMetrics: Object.fromEntries(
+        scenarios.map(([name, data]) => [name, data.protocolMetrics]),
       ),
       protocolMetrics: { ...this.protocols },
       metrics: {
@@ -254,7 +263,9 @@ export class Aggregator {
         checksFailed: this.checkCount ? this.checksFailed : undefined,
         droppedIterations: this.dropped,
       },
-      series: [...this.buckets.values()].sort((a, b) => a.elapsed - b.elapsed),
+      series: [...this.buckets.values()]
+        .sort((a, b) => a.elapsed - b.elapsed)
+        .map((bucket) => ({ ...bucket, widthSeconds: this.bucketWidth })),
     };
   }
 }

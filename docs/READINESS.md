@@ -57,7 +57,7 @@ Other open acceptance gates:
 - Broader security fuzzing for payloads, unusual URL encodings, very large output and exceptional process cleanup. No-comments enforcement and split-credential log buffering have automated coverage.
 - Rich existing-script identity management, summary capability negotiation and safe rerun after script changes. Arbitrary custom scripts currently retain observed metrics without authoritative final percentiles; scripts are never rewritten.
 - Rerun/edit from sensitive historical configurations currently requires re-entry rather than retaining raw headers, bodies or URL queries. This favors privacy but does not satisfy the full saved-template workflow yet.
-- Full result tooltips, aligned paired charts on a shared scale, comparison scenario selection, more history sorting options and saved-test organization.
+- More history sorting options, broader metric help text and saved-test organization. Comparison now supports shared chart scales, scenario selection, native protocol rows and explicit missing scoped data. Older records without exact bucket widths retain summary rates but cannot show trustworthy throughput curves.
 - Recovery of abandoned temporary run directories after a hard extension-host crash. Normal completion, cancellation and handled failures clean up transient artifacts.
 
 ## Packaging and maintainer decisions

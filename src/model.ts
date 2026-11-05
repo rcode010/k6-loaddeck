@@ -58,6 +58,7 @@ export interface Metrics {
   droppedIterations?: number;
 }
 export interface Bucket {
+  widthSeconds?: number;
   elapsed: number;
   requests: number;
   latencySum: number;
@@ -114,6 +115,8 @@ export interface Run {
     | "incomplete";
   protocol?: string;
   scenarioMetrics?: Record<string, Metrics>;
+  scenarioSeries?: Record<string, Bucket[]>;
+  scenarioProtocolMetrics?: Record<string, Record<string, number>>;
   protocolMetrics?: Record<string, number>;
   metrics: Metrics;
   series: Bucket[];
