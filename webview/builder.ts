@@ -1,3 +1,10 @@
+import {
+  builtinMetrics,
+  thresholdAggregations,
+  validAggregation,
+  type MetricDefinition,
+  type MetricType,
+} from "../src/thresholds";
 import type { QuickTest } from "../src/model";
 import {
   executors,
@@ -48,6 +55,8 @@ function control(
           : "text";
     if (typeof value === "boolean") input.checked = value;
   }
+  if (input instanceof HTMLInputElement && input.type === "number")
+    input.step = "any";
   input.setAttribute("aria-label", label);
   input.value = String(value);
   input.addEventListener("change", () =>
@@ -65,7 +74,15 @@ function section(title: string, description: string): HTMLDetailsElement {
   d.append(node("summary", title), node("p", description));
   return d;
 }
-export function workloadBuilder(config: QuickTest): HTMLElement {
+export function workloadBuilder(
+  config: QuickTest,
+  catalog: MetricDefinition[] = [],
+): HTMLElement {
+  const available = new Map(
+    builtinMetrics.map((metric) => [metric.name, metric]),
+  );
+  for (const metric of catalog)
+    if (!available.has(metric.name)) available.set(metric.name, metric);
   const root = node("div");
   function render(): void {
     const opened = new Set(
@@ -351,7 +368,7 @@ export function workloadBuilder(config: QuickTest): HTMLElement {
     root.append(checks);
     const thresholds = section(
       "Threshold rules",
-      "Rate values are ratios (0.01 = 1%). Duration values are milliseconds. Starter rules are suggestions, not your SLA.",
+      "Only aggregations supported by the metric type are offered. Rates use ratios; timing metrics use milliseconds. Starter rules are suggestions, not your SLA.",
     );
     const thresholdRules = (config.thresholdRules ??= []);
     for (const [index, rule] of thresholdRules.entries()) {
@@ -359,42 +376,79 @@ export function workloadBuilder(config: QuickTest): HTMLElement {
       row.append(node("legend", `Threshold ${index + 1}`));
       const grid = node("div");
       grid.className = "grid";
+      const metric = available.get(rule.metric),
+        type = metric?.type ?? rule.metricType ?? "trend";
+      if (!metric || metric.source !== "builtin") rule.metricType = type;
+      const aggregations = thresholdAggregations(type);
+      if (
+        !aggregations.includes(rule.aggregation) &&
+        validAggregation(type, rule.aggregation)
+      )
+        aggregations.push(rule.aggregation);
       grid.append(
         control(
           "Metric",
-          rule.metric,
-          (v) => {
-            rule.metric = v;
+          metric ? rule.metric : "Custom metric…",
+          (value) => {
+            rule.metric = value === "Custom metric…" ? "custom_metric" : value;
+            rule.metricType = available.get(rule.metric)?.type ?? "trend";
+            if (!validAggregation(rule.metricType, rule.aggregation))
+              rule.aggregation = thresholdAggregations(rule.metricType)[0]!;
             render();
           },
-          [
-            "http_req_duration",
-            "http_req_failed",
-            "http_reqs",
-            "checks",
-            "iterations",
-            "dropped_iterations",
-            "vus",
-            "vus_max",
-          ],
+          [...available.keys(), "Custom metric…"],
         ),
+      );
+      if (!metric) {
+        grid.append(
+          control("Custom metric name", rule.metric, (v) => (rule.metric = v)),
+          control(
+            "Custom metric type",
+            type,
+            (v) => {
+              rule.metricType = v as MetricType;
+              if (!validAggregation(rule.metricType, rule.aggregation))
+                rule.aggregation = thresholdAggregations(rule.metricType)[0]!;
+              render();
+            },
+            ["counter", "gauge", "rate", "trend"],
+          ),
+        );
+        row.append(
+          node(
+            "p",
+            "The test must emit this custom metric. Selecting its name does not create measurements. Preview/save the script to add custom measurement logic.",
+          ),
+        );
+      } else
+        row.append(
+          node(
+            "p",
+            `${metric.name}: ${metric.type} · ${metric.source === "k6-json" ? "observed in k6 output" : "built-in k6 metric"}`,
+          ),
+        );
+      grid.append(
         control(
           "Aggregation",
           rule.aggregation,
-          (v) => (rule.aggregation = v),
-          [
-            "avg",
-            "min",
-            "max",
-            "med",
-            "p(90)",
-            "p(95)",
-            "p(99)",
-            "rate",
-            "count",
-            "value",
-          ],
+          (v) => {
+            rule.aggregation = v;
+            render();
+          },
+          aggregations,
         ),
+      );
+      if (type === "trend" && rule.aggregation.startsWith("p("))
+        grid.append(
+          control(
+            "Percentile (0–100)",
+            Number(rule.aggregation.slice(2, -1)),
+            (v) => {
+              rule.aggregation = `p(${v})`;
+            },
+          ),
+        );
+      grid.append(
         control(
           "Operator",
           rule.operator,
@@ -403,16 +457,21 @@ export function workloadBuilder(config: QuickTest): HTMLElement {
         ),
         control("Value", rule.value, (v) => (rule.value = Number(v))),
         control("Tag filter", rule.scope, (v) => (rule.scope = v)),
-        control(
-          "Abort on failure",
-          rule.abortOnFail,
-          (v) => (rule.abortOnFail = v === "true"),
-        ),
-        control(
-          "Delay abort evaluation",
-          rule.delayAbortEval,
-          (v) => (rule.delayAbortEval = v),
-        ),
+        control("Abort on failure", rule.abortOnFail, (v) => {
+          rule.abortOnFail = v === "true";
+          if (!rule.abortOnFail) rule.delayAbortEval = "";
+          render();
+        }),
+      );
+      if (rule.abortOnFail)
+        grid.append(
+          control(
+            "Delay abort evaluation",
+            rule.delayAbortEval,
+            (v) => (rule.delayAbortEval = v),
+          ),
+        );
+      grid.append(
         action("Remove threshold", () => {
           thresholdRules.splice(index, 1);
           render();
@@ -422,6 +481,10 @@ export function workloadBuilder(config: QuickTest): HTMLElement {
         grid,
         node(
           "p",
+          `Unit: ${type === "rate" ? "ratio, 0–1 (0.01 = 1%)" : rule.aggregation === "rate" ? "per second" : (metric?.unit ?? "the custom metric’s unit")}`,
+        ),
+        node(
+          "p",
           `${rule.metric}${rule.scope ? `{${rule.scope}}` : ""}: ${rule.aggregation}${rule.operator}${rule.value}`,
         ),
       );
@@ -429,8 +492,7 @@ export function workloadBuilder(config: QuickTest): HTMLElement {
     }
     thresholds.append(
       action("Add threshold", () => {
-        config.thresholdRules ??= [];
-        config.thresholdRules.push({
+        thresholdRules.push({
           metric: "http_req_duration",
           aggregation: "p(95)",
           operator: "<",

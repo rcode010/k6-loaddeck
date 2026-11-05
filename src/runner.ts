@@ -1,3 +1,5 @@
+import { configuredThresholds, reconcileThresholds } from "./thresholds";
+import { observation, plannedDurationMs } from "./observation";
 import { LogBuffer } from "./logs";
 import { externalEnvironment, supportedExternalOutputs } from "./outputs";
 import { credentialVariables, parseCsv } from "./integrations";
@@ -162,6 +164,10 @@ export class K6Runner {
       exitCode: null,
       k6Version: version,
       protocol: config?.protocol?.kind ?? (config ? "http" : "custom"),
+      thresholdsConfigured: config
+        ? configuredThresholds(config).length > 0
+        : undefined,
+      plannedDurationMs: config ? plannedDurationMs(config) : undefined,
       metrics: {},
       series: [],
       thresholds: [],
@@ -385,42 +391,17 @@ export class K6Runner {
               ),
             ),
           };
-          run.thresholds = summary.thresholds;
-          const summaryRecord = JSON.parse(
-            await readFile(summaryFile, "utf8"),
-          ) as {
-            root_group?: {
-              checks?: { name: string; passes: number; fails: number }[];
-              groups?: unknown[];
-            };
-          };
-          const checks: NonNullable<Run["checkResults"]> = [];
-          const collectChecks = (group: unknown) => {
-            if (!group || typeof group !== "object") return;
-            const value = group as {
-              checks?: NonNullable<Run["checkResults"]>;
-              groups?: unknown[];
-            };
-            checks.push(...(value.checks ?? []));
-            for (const child of value.groups ?? []) collectChecks(child);
-          };
-          collectChecks(summaryRecord.root_group);
-          if (!run.checkResults?.length) run.checkResults = checks;
-          const raw = JSON.parse(await readFile(summaryFile, "utf8")) as {
-            metrics: Record<string, { values: Record<string, number> }>;
-          };
+          run.thresholds = reconcileThresholds(config, summary.thresholds);
+          if (!run.checkResults?.length)
+            run.checkResults = summary.checkResults;
           run.protocolMetrics = {
             ...run.protocolMetrics,
-            ...Object.fromEntries(
-              Object.entries(raw.metrics)
-                .filter(([name]) => /^(ws_|grpc_)/.test(name))
-                .flatMap(([name, metric]) =>
-                  Object.entries(metric.values)
-                    .filter(([, value]) => Number.isFinite(value))
-                    .map(([key, value]) => [`${name}.${key}`, value]),
-                ),
-            ),
+            ...summary.protocolMetrics,
           };
+          run.metricCatalog = summary.metricCatalog.length
+            ? summary.metricCatalog
+            : run.metricCatalog;
+          run.engineElapsedMs = summary.engineElapsedMs;
           run.summarySource = "k6-summary";
         } catch {
           log(
@@ -428,6 +409,8 @@ export class K6Runner {
           );
         }
       }
+      if (config && run.summarySource !== "k6-summary")
+        run.thresholds = reconcileThresholds(config, []);
       run.exitCode = result.code;
       if (outputError)
         log(
@@ -449,6 +432,9 @@ export class K6Runner {
       if (this.forceTimer) clearTimeout(this.forceTimer);
       this.forceTimer = undefined;
       this.child = undefined;
+      run.observation = observation(run, config);
+      if (config && !run.thresholds.length)
+        run.thresholds = reconcileThresholds(config, []);
       run.endedAt = new Date().toISOString();
       run.elapsedMs = Date.now() - started;
       if (directory)

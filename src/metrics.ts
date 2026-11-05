@@ -1,4 +1,9 @@
-import type { Bucket, Metrics, ThresholdResult, CheckResult } from "./model";
+import {
+  metricDefinition,
+  type MetricType,
+  type MetricDefinition,
+} from "./thresholds";
+import type { Bucket, Metrics, CheckResult } from "./model";
 
 export class JsonLines {
   private pending = "";
@@ -25,7 +30,8 @@ export class JsonLines {
 export class Aggregator {
   private requests = 0;
   private hasRequests = false;
-  private metricTypes = new Map<string, string>();
+  private metricTypes = new Map<string, MetricType>();
+  private metricCatalog = new Map<string, MetricDefinition>();
   private protocolStats = new Map<string, { sum: number; count: number }>();
   private latencySum = 0;
   private latencyCount = 0;
@@ -52,14 +58,23 @@ export class Aggregator {
       metric?: string;
       data?: {
         type?: string;
+        contains?: string;
         value?: number;
         time?: string;
         tags?: Record<string, string>;
       };
     };
     if (r.type === "Metric" && r.metric && r.data?.type) {
-      if (this.metricTypes.size < 1000)
-        this.metricTypes.set(r.metric, r.data.type);
+      if (
+        this.metricTypes.size < 1000 &&
+        /^[_A-Za-z][_A-Za-z0-9]{0,199}$/.test(r.metric) &&
+        ["counter", "gauge", "rate", "trend"].includes(r.data.type)
+      ) {
+        const type = r.data.type as MetricType;
+        this.metricTypes.set(r.metric, type);
+        const definition = metricDefinition(r.metric, type, r.data.contains);
+        this.metricCatalog.set(r.metric, { ...definition, source: "k6-json" });
+      }
       return;
     }
     if (
@@ -205,12 +220,14 @@ export class Aggregator {
   }
   snapshot(elapsedMs: number): {
     metrics: Metrics;
+    metricCatalog: MetricDefinition[];
     checkResults: CheckResult[];
     series: Bucket[];
     scenarioMetrics: Record<string, Metrics>;
     protocolMetrics: Record<string, number>;
   } {
     return {
+      metricCatalog: [...this.metricCatalog.values()],
       checkResults: [...this.checkResults.values()].map((result) => ({
         ...result,
       })),
@@ -241,46 +258,4 @@ export class Aggregator {
     };
   }
 }
-export function readSummary(value: unknown): {
-  metrics: Metrics;
-  thresholds: ThresholdResult[];
-} {
-  if (!value || typeof value !== "object")
-    throw new Error("Invalid k6 summary.");
-  const summary = value as {
-    metrics?: Record<
-      string,
-      {
-        values?: Record<string, number>;
-        thresholds?: Record<string, { ok: boolean }>;
-      }
-    >;
-  };
-  if (!summary.metrics || typeof summary.metrics !== "object")
-    throw new Error("Missing k6 summary metrics.");
-  const get = (metric: string, key: string): number | undefined => {
-    const n = summary.metrics?.[metric]?.values?.[key];
-    return typeof n === "number" && Number.isFinite(n) ? n : undefined;
-  };
-  return {
-    metrics: {
-      requests: get("http_reqs", "count"),
-      rps: get("http_reqs", "rate"),
-      avg: get("http_req_duration", "avg"),
-      p95: get("http_req_duration", "p(95)"),
-      p99: get("http_req_duration", "p(99)"),
-      failureRate: get("http_req_failed", "rate"),
-      checksPassed: get("checks", "passes"),
-      checksFailed: get("checks", "fails"),
-      vus: get("vus", "value"),
-      droppedIterations: get("dropped_iterations", "count"),
-    },
-    thresholds: Object.entries(summary.metrics).flatMap(([metric, record]) =>
-      Object.entries(record.thresholds ?? {}).map(([expression, result]) => ({
-        metric,
-        expression,
-        ok: result.ok === true,
-      })),
-    ),
-  };
-}
+export { readSummary } from "./summary";

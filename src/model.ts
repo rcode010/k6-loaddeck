@@ -1,3 +1,4 @@
+import type { MetricDefinition } from "./thresholds";
 import type { ExternalOutput } from "./outputs";
 import type {
   ProtocolConfig,
@@ -77,7 +78,11 @@ export interface CheckResult {
 export interface ThresholdResult {
   metric: string;
   expression: string;
-  ok: boolean;
+  ok: boolean | null;
+  observedValue?: number;
+  unit?: string;
+  abortOnFail?: boolean;
+  delayAbortEval?: string;
 }
 export interface Run {
   schemaVersion: 1;
@@ -97,6 +102,16 @@ export interface Run {
   state: RunState;
   exitCode: number | null;
   k6Version: string;
+  metricCatalog?: MetricDefinition[];
+  thresholdsConfigured?: boolean;
+  engineElapsedMs?: number;
+  plannedDurationMs?: number;
+  observation?:
+    | "complete"
+    | "cancelled"
+    | "threshold-aborted"
+    | "threshold-abort-possible"
+    | "incomplete";
   protocol?: string;
   scenarioMetrics?: Record<string, Metrics>;
   protocolMetrics?: Record<string, number>;

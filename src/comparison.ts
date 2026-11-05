@@ -45,11 +45,13 @@ export function compareRuns(
   }
   if (
     [baseline, candidate].some(
-      (r) => r.state !== "completed" && r.state !== "threshold_failed",
+      (r) =>
+        (r.state !== "completed" && r.state !== "threshold_failed") ||
+        (r.observation !== undefined && r.observation !== "complete"),
     )
   )
     notes.push(
-      "At least one run is incomplete or failed. Compare only the available observations.",
+      "At least one run is incomplete, failed or stopped early. Compare only the available observations.",
     );
   const definitions: [
     keyof Metrics,

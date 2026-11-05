@@ -34,15 +34,6 @@ export interface Scenario {
   url: string;
   tags: Record<string, string>;
 }
-export interface ThresholdRule {
-  metric: string;
-  aggregation: string;
-  operator: "<" | "<=" | ">" | ">=" | "==" | "!=";
-  value: number;
-  scope: string;
-  abortOnFail: boolean;
-  delayAbortEval: string;
-}
 export function scenarioOptions(
   s: Scenario,
   index: number,
@@ -192,60 +183,6 @@ export function validateScenarios(scenarios: Scenario[]): void {
     }
   }
 }
-export function compileThresholds(
-  rules: ThresholdRule[],
-): Record<
-  string,
-  { threshold: string; abortOnFail: boolean; delayAbortEval?: string }[]
-> {
-  const result: Record<
-    string,
-    { threshold: string; abortOnFail: boolean; delayAbortEval?: string }[]
-  > = {};
-  if (!Array.isArray(rules) || rules.length > 100)
-    throw new Error("Configure at most 100 thresholds.");
-  for (const rule of rules) {
-    if (
-      !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(rule.metric) ||
-      !["<", "<=", ">", ">=", "==", "!="].includes(rule.operator) ||
-      !Number.isFinite(rule.value) ||
-      rule.value < 0
-    )
-      throw new Error("Invalid threshold metric, operator or value.");
-    const type =
-      rule.metric.includes("duration") || rule.metric === "latency"
-        ? "trend"
-        : ["http_req_failed", "checks"].includes(rule.metric)
-          ? "rate"
-          : ["vus", "vus_max"].includes(rule.metric)
-            ? "gauge"
-            : "counter";
-    const valid: Record<string, string[]> = {
-      trend: ["avg", "min", "max", "med", "p(90)", "p(95)", "p(99)"],
-      rate: ["rate"],
-      gauge: ["value", "min", "max"],
-      counter: ["count", "rate"],
-    };
-    if (!valid[type]!.includes(rule.aggregation))
-      throw new Error(
-        `Invalid aggregation for ${rule.metric}. Custom metrics require their actual k6 metric type.`,
-      );
-    if (
-      rule.scope &&
-      !/^[A-Za-z0-9_ .:/=-]+:[A-Za-z0-9_ .:/=,-]+$/.test(rule.scope)
-    )
-      throw new Error("Threshold scope: use tag:value pairs.");
-    if (rule.delayAbortEval)
-      duration(rule.delayAbortEval, "Abort evaluation delay", true);
-    const key = rule.metric + (rule.scope ? `{${rule.scope}}` : "");
-    (result[key] ??= []).push({
-      threshold: `${rule.aggregation}${rule.operator}${rule.value}`,
-      abortOnFail: rule.abortOnFail,
-      ...(rule.delayAbortEval ? { delayAbortEval: rule.delayAbortEval } : {}),
-    });
-  }
-  return result;
-}
 export {
   validateChecks,
   checkExpression,
@@ -254,3 +191,6 @@ export {
   checkKinds,
 } from "./checks";
 export type { CheckRule } from "./checks";
+
+export { compileThresholds } from "./thresholds";
+export type { ThresholdRule } from "./thresholds";

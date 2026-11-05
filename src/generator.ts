@@ -1,11 +1,11 @@
+import {
+  thresholdOptions,
+  configuredThresholds,
+  parseThreshold,
+} from "./thresholds";
 import path from "node:path";
 import type { QuickTest } from "./model";
-import {
-  defaultScenario,
-  scenarioOptions,
-  compileThresholds,
-  checkStatements,
-} from "./workload";
+import { defaultScenario, scenarioOptions, checkStatements } from "./workload";
 const json = JSON.stringify;
 export function generateScript(c: QuickTest): string {
   const protocol = c.protocol?.kind ?? "http";
@@ -23,11 +23,20 @@ export function generateScript(c: QuickTest): string {
     scenarios: Object.fromEntries(
       scenarios.map((s, i) => [s.name, scenarioOptions(s, i)]),
     ),
-    thresholds: {
-      ...c.thresholds,
-      ...compileThresholds(c.thresholdRules ?? []),
-    },
-    summaryTrendStats: ["avg", "min", "max", "med", "p(95)", "p(99)"],
+    thresholds: thresholdOptions(c),
+    summaryTrendStats: [
+      ...new Set([
+        "avg",
+        "min",
+        "max",
+        "med",
+        "p(95)",
+        "p(99)",
+        ...configuredThresholds(c)
+          .filter((d) => d.metricType === "trend")
+          .map((d) => parseThreshold(d.expression).aggregation),
+      ]),
+    ],
     systemTags: [
       "status",
       "method",

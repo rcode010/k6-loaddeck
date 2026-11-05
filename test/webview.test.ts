@@ -174,6 +174,50 @@ test(
       assert.equal(preview?.config?.checks?.[0]?.kind, "messageRegex");
       assert.equal(preview?.config?.checks?.[0]?.flags, "i");
       assert.equal(preview?.config?.checks?.[0]?.group, "messages");
+      await page.getByText("Threshold rules", { exact: true }).click();
+      await page
+        .getByRole("button", { name: "Add threshold", exact: true })
+        .click();
+      await page.getByLabel("Metric", { exact: true }).selectOption("checks");
+      assert.equal(
+        await page.getByLabel("Aggregation", { exact: true }).inputValue(),
+        "rate",
+      );
+      assert.deepEqual(
+        await page
+          .getByLabel("Aggregation", { exact: true })
+          .locator("option")
+          .allTextContents(),
+        ["rate"],
+      );
+      await page
+        .getByLabel("Metric", { exact: true })
+        .selectOption("http_req_duration");
+      await page
+        .getByLabel("Aggregation", { exact: true })
+        .selectOption("p(99)");
+      await page
+        .getByLabel("Percentile (0–100)", { exact: true })
+        .fill("99.99");
+      await page
+        .getByRole("button", { name: "Preview script", exact: true })
+        .click();
+      const thresholds = await page.evaluate(() =>
+        (
+          window as unknown as {
+            messages: {
+              type: string;
+              config?: { thresholdRules?: { aggregation: string }[] };
+            }[];
+          }
+        ).messages
+          .filter((m) => m.type === "preview")
+          .at(-1),
+      );
+      assert.equal(
+        thresholds?.config?.thresholdRules?.[0]?.aggregation,
+        "p(99.99)",
+      );
       view.screen = "home";
       view.installation = {
         ready: false,

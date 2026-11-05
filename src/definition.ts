@@ -1,9 +1,6 @@
+import { configuredThresholds } from "./thresholds";
 import { validateIntegrations } from "./integrations";
-import {
-  validateScenarios,
-  validateChecks,
-  compileThresholds,
-} from "./workload";
+import { validateScenarios, validateChecks } from "./workload";
 import { createHash } from "node:crypto";
 import type { QuickTest } from "./model";
 
@@ -111,34 +108,7 @@ export function validateQuickTest(value: unknown): QuickTest {
     Array.isArray(c.thresholds)
   )
     throw new Error("Thresholds: enter a metric-to-expressions object.");
-  const allowed: Record<string, string[]> = {
-    http_req_duration: ["avg", "min", "max", "med", "p(90)", "p(95)", "p(99)"],
-    http_req_failed: ["rate"],
-    checks: ["rate"],
-    http_reqs: ["count", "rate"],
-    iterations: ["count", "rate"],
-    dropped_iterations: ["count", "rate"],
-  };
-  for (const [metric, expressions] of Object.entries(c.thresholds)) {
-    if (
-      !allowed[metric] ||
-      !Array.isArray(expressions) ||
-      expressions.length > 20 ||
-      !expressions.length
-    )
-      throw new Error(
-        "Thresholds: select a supported metric and nonempty expressions.",
-      );
-    for (const expression of expressions) {
-      const match =
-        typeof expression === "string" &&
-        /^(avg|min|max|med|p\(\d+\)|rate|count)\s*(<=|>=|<|>|==|!=)\s*(\d+(?:\.\d+)?)$/.exec(
-          expression,
-        );
-      if (!match || !allowed[metric]!.includes(match[1]!))
-        throw new Error(`Thresholds: invalid expression for ${metric}.`);
-    }
-  }
+  configuredThresholds(c);
   if (c.scenarios) {
     validateScenarios(c.scenarios);
     for (const scenario of c.scenarios) {
@@ -166,7 +136,6 @@ export function validateQuickTest(value: unknown): QuickTest {
           `Check ${rule.name}: choose enabled scenarios from this test.`,
         );
   }
-  if (c.thresholdRules) compileThresholds(c.thresholdRules);
   validateIntegrations(c);
   if (!c.protocol && !["http:", "https:"].includes(url.protocol))
     throw new Error("Choose the matching protocol in Advanced options.");

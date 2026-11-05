@@ -1,3 +1,4 @@
+import { outcomeText, thresholdText } from "../src/outcome";
 import { integrationBuilder } from "./integrations";
 import { workloadBuilder } from "./builder";
 import { compareRuns } from "../src/comparison";
@@ -92,19 +93,7 @@ function notice(text: string): HTMLElement {
   e.setAttribute("role", "status");
   return e;
 }
-function status(run: Run): string {
-  return {
-    starting: "Starting",
-    running: "Running",
-    stopping: "Stopping",
-    completed: run.thresholds.length
-      ? "Completed · thresholds met"
-      : "Completed · no thresholds",
-    threshold_failed: "Threshold failed",
-    execution_failed: "Execution failed",
-    cancelled: "Cancelled",
-  }[run.state];
-}
+const status = outcomeText;
 function navigation(): HTMLElement {
   const e = element("nav", undefined, "navigation");
   e.setAttribute("aria-label", "LoadDeck navigation");
@@ -263,7 +252,10 @@ function configForm(): HTMLElement {
     ),
   );
   advanced.append(upload);
-  const builder = workloadBuilder(draft);
+  const builder = workloadBuilder(
+    draft,
+    state?.runs.flatMap((run) => run.metricCatalog ?? []) ?? [],
+  );
   advanced.append(
     builder,
     integrationBuilder(draft, post, state?.installation.externalOutputs ?? []),
@@ -540,6 +532,18 @@ function dashboard(): HTMLElement {
       button("Stop Test", () => post({ type: "stop", id: run.id }), "danger"),
     );
   main.append(strip, metrics(run));
+  if (run.observation === "threshold-aborted")
+    main.append(
+      notice(
+        `k6 stopped this test early after an aborting threshold failed. Observed ${format((run.engineElapsedMs ?? run.elapsedMs) / 1000)}s of the planned ${format((run.plannedDurationMs ?? 0) / 1000)}s workload. These measurements do not cover the full schedule.`,
+      ),
+    );
+  else if (run.observation === "threshold-abort-possible")
+    main.append(
+      notice(
+        "An aborting threshold failed. The iteration workload has no known finish time, so early termination cannot be determined from duration. Treat these results as potentially incomplete.",
+      ),
+    );
   if (run.scenarioMetrics && Object.keys(run.scenarioMetrics).length) {
     const filter = select(
       [
@@ -618,7 +622,7 @@ function dashboard(): HTMLElement {
       section.append(
         element(
           "p",
-          `${t.ok ? "Met" : "Failed"} · ${t.metric} · ${t.expression}`,
+          `${thresholdText(t)} · ${t.metric} · ${t.expression} · observed ${format(t.observedValue)} ${t.unit ?? ""}${t.abortOnFail ? " · abort on failure" : ""}${t.delayAbortEval ? " after " + t.delayAbortEval : ""}`,
         ),
       );
     main.append(section);
