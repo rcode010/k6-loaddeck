@@ -28,6 +28,14 @@ export function validateQuickTest(value: unknown): QuickTest {
     !url.hostname
   )
     throw new Error("URL: only HTTP and HTTPS are supported.");
+  for (const [key, val] of url.searchParams)
+    if (
+      /token|secret|password|api[-_]?key|authorization/i.test(key) &&
+      !/^\$\{[A-Z_][A-Z0-9_]*\}$/.test(val)
+    )
+      throw new Error(
+        "Sensitive URL query values must reference runtime variables, such as ${API_TOKEN}.",
+      );
   if (url.username || url.password)
     throw new Error(
       "URL: use environment-backed authentication rather than embedded credentials.",
@@ -54,11 +62,14 @@ export function validateQuickTest(value: unknown): QuickTest {
     throw new Error("Name: use at most 160 characters.");
   if (typeof c.body !== "string" || c.body.length > 1024 * 1024)
     throw new Error("Body: maximum size is 1 MiB.");
-  if (!["text", "json"].includes(c.bodyMode))
+  if (!["text", "json", "form", "multipart"].includes(c.bodyMode))
     throw new Error("Body: select text or JSON.");
-  if (["GET", "HEAD"].includes(c.method) && c.body)
+  if (
+    ["GET", "HEAD"].includes(c.method) &&
+    (c.body || c.bodyMode === "multipart")
+  )
     throw new Error("Body: GET and HEAD tests cannot send a body.");
-  if (c.bodyMode === "json" && c.body) {
+  if (["json", "form", "multipart"].includes(c.bodyMode) && c.body) {
     try {
       JSON.parse(c.body);
     } catch {
@@ -149,7 +160,7 @@ export function validateQuickTest(value: unknown): QuickTest {
     throw new Error("Choose the matching protocol in Advanced options.");
   return {
     ...c,
-    url: url.toString(),
+    url: c.url,
     headers: { ...c.headers },
     thresholds: { ...c.thresholds },
   };
@@ -171,10 +182,12 @@ export function safeConfig(config: QuickTest): QuickTest | undefined {
     url.search ||
     url.hash ||
     config.body ||
+    config.upload ||
     config.dataset ||
     (config.authentication?.mode && config.authentication.mode !== "none") ||
     config.protocol ||
     config.outputs?.length ||
+    config.externalOutput?.enabled ||
     config.scenarios?.some((s) => {
       const u = new URL(s.url || config.url);
       return Boolean(u.search || u.hash);

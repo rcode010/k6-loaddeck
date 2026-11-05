@@ -64,12 +64,14 @@ export function generateScript(c: QuickTest): string {
     init += `options.tlsAuth = [{ cert: required(${json(auth.certificateVariable)}), key: required(${json(auth.privateKeyVariable)}) }];\n`;
   if (c.dataset?.file)
     init += `const rows = new SharedArray('LoadDeck dataset', () => ${c.dataset.format === "json" ? `JSON.parse(open(${json(c.dataset.file)}))` : `parseCsv(open(${json(c.dataset.file)}))`});\n`;
+  if (c.bodyMode === "multipart" && c.upload)
+    init += `const uploadData = open(${json(c.upload.path)}, 'b');\n`;
   if (protocol === "grpc")
     init += `const client = new grpc.Client();\nclient.load(${json([...c.protocol!.importPaths, path.dirname(c.protocol!.protoFile)])}, ${json(path.basename(c.protocol!.protoFile))});\n`;
   const helper = `function required(name) { const value = __ENV[name]; if (!value) throw new Error('Missing runtime variable: ' + name); return value; }
 function safeCheck(fn) { try { return Boolean(fn()); } catch { return false; } }
 function jsonPath(value, path) { return path.split('.').reduce((v, key) => v == null ? undefined : v[key], value); }
-function template(value, row) { return String(value).replace(/\\{\\{([A-Za-z0-9_.]+)\\}\\}/g, (_, key) => { const found = jsonPath(row, key); if (found === undefined) throw new Error('Missing dataset column: ' + key); return String(found); }); }
+function template(value, row) { return String(value).replace(/\\$\\{([A-Z_][A-Z0-9_]*)\\}/g, (_, key) => required(key)).replace(/\\{\\{([A-Za-z0-9_.]+)\\}\\}/g, (_, key) => { const found = jsonPath(row, key); if (found === undefined) throw new Error('Missing dataset column: ' + key); return String(found); }); }
 function jsonTemplate(value, row) { if (Array.isArray(value)) return value.map(v => jsonTemplate(v, row)); if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k,v]) => [k,jsonTemplate(v,row)])); if (typeof value === 'string') { const match = /^\\{\\{([A-Za-z0-9_.]+)\\}\\}$/.exec(value); return match ? jsonPath(row, match[1]) : template(value,row); } return value; }
 let oauthToken = ''; let tokenExpiry = 0;
 function oauth() { if (Date.now() < tokenExpiry) return oauthToken; const response = http.post(${json(auth?.tokenUrl ?? "")}, { grant_type: 'client_credentials', client_id: ${auth?.mode === "oauth2" ? `required(${json(auth.usernameVariable)})` : "''"}, client_secret: ${auth?.mode === "oauth2" ? `required(${json(auth.secretVariable)})` : "''"}, scope: ${json(auth?.scope ?? "")}, audience: ${json(auth?.audience ?? "")} }, {tags:{name:'OAuth token'}}); if (response.status !== 200) throw new Error('OAuth token acquisition failed'); const payload = response.json(); if (!payload.access_token) throw new Error('OAuth response has no access token'); oauthToken = payload.access_token; tokenExpiry = Date.now() + Math.max(1, Number(payload.expires_in || 60) - 5) * 1000; return oauthToken; }
@@ -98,6 +100,8 @@ function oauth() { if (Date.now() < tokenExpiry) return oauthToken; const respon
         const secret = `required(${json(auth.secretVariable)})`;
         if (auth.mode === "basic")
           setup += `  headers.Authorization = 'Basic ' + encoding.b64encode(required(${json(auth.usernameVariable)}) + ':' + ${secret});\n`;
+        if (auth.mode === "digest")
+          setup += `  target = target.replace(/^(https?:\\/\\/)/, prefix => prefix + encodeURIComponent(required(${json(auth.usernameVariable)})) + ':' + encodeURIComponent(${secret}) + '@');\n`;
         if (auth.mode === "bearer")
           setup += `  headers.Authorization = 'Bearer ' + ${secret};\n`;
         if (auth.mode === "apiKey")
@@ -110,13 +114,18 @@ function oauth() { if (Date.now() < tokenExpiry) return oauthToken; const respon
         if (auth.mode === "oauth2")
           setup += `  headers.Authorization = 'Bearer ' + oauth();\n`;
       }
+      if (c.bodyMode === "form" || c.bodyMode === "multipart") {
+        setup += `  const payload = jsonTemplate(${c.body || "{}"}, row);\n`;
+        if (c.bodyMode === "multipart" && c.upload)
+          setup += `  payload[${json(c.upload.field)}] = http.file(uploadData, ${json(c.upload.filename)}, ${json(c.upload.contentType)});\n`;
+      }
       let operation = "";
       if (protocol === "ws")
         operation = `  const response = ws.connect(target, { headers, tags:{name:${json(s.name)}} }, socket => {\n    socket.on('open', () => socket.send(template(${json(c.protocol!.message)}, row)));\n    socket.on('message', message => { ${checks.length ? `check(message, { ${checks.join(", ")} });` : ""} });\n    socket.setTimeout(() => socket.close(), ${c.protocol!.sessionMs});\n  });\n  check(response, {'WebSocket connected': r => r && r.status === 101});\n`;
       else if (protocol === "grpc")
         operation = `  client.connect(target.replace(/^grpcs?:\\/\\//, ''), { plaintext: ${c.protocol!.plaintext} });\n  try { const response = client.invoke(${json(c.protocol!.grpcMethod)}, jsonTemplate(${c.protocol!.message}, row), { metadata:headers, tags:{name:${json(s.name)}} });\n  ${assertions || "check(response, {'gRPC status OK': r => r && r.status === grpc.StatusOK});"}\n  } finally { client.close(); }\n`;
       else
-        operation = `  const response = http.request(${json(c.method)}, target, ${c.body ? (c.bodyMode === "json" ? `JSON.stringify(jsonTemplate(${c.body}, row))` : `template(${json(c.body)}, row)`) : "null"}, { headers, tags:{name:${json(s.name)}}, timeout:'30s' });\n  ${assertions}\n`;
+        operation = `  const response = http.request(${json(c.method)}, target, ${["form", "multipart"].includes(c.bodyMode) ? "payload" : c.body ? (c.bodyMode === "json" ? `JSON.stringify(jsonTemplate(${c.body}, row))` : `template(${json(c.body)}, row)`) : "null"}, { headers, ${auth?.mode === "digest" ? "auth:'digest'," : ""}tags:{name:${json(s.name)}}, timeout:'30s' });\n  ${assertions}\n`;
       return `export function scenario_${index}() {\n  ${setup}${operation}${s.executor.includes("arrival-rate") ? "" : `  sleep(${c.sleep});\n`}}`;
     })
     .join("\n\n");

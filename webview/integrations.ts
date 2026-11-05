@@ -44,6 +44,7 @@ function field(
           : "text";
     if (typeof value === "boolean") e.checked = value;
   }
+  e.setAttribute("aria-label", label);
   e.value = String(value);
   e.addEventListener("change", () =>
     update(
@@ -63,6 +64,7 @@ function section(title: string, description: string): HTMLDetailsElement {
 export function integrationBuilder(
   config: QuickTest,
   post: (m: ClientMessage) => void,
+  availableOutputs: string[] = [],
 ): HTMLElement {
   const root = node("div");
   function render(): void {
@@ -152,11 +154,20 @@ export function integrationBuilder(
           config.authentication = { ...a, mode: v as Authentication["mode"] };
           render();
         },
-        ["none", "basic", "bearer", "apiKey", "cookie", "oauth2", "mtls"],
+        [
+          "none",
+          "basic",
+          "digest",
+          "bearer",
+          "apiKey",
+          "cookie",
+          "oauth2",
+          "mtls",
+        ],
       ),
     );
     if (a.mode !== "none") {
-      if (["basic", "oauth2"].includes(a.mode))
+      if (["basic", "digest", "oauth2"].includes(a.mode))
         authentication.append(
           field(
             "Username / client ID variable",
@@ -232,7 +243,7 @@ export function integrationBuilder(
     authentication.append(
       node(
         "p",
-        "Digest and NTLM are unavailable in this preview: compatible authentication fixtures have not been validated. Use an existing script for these schemes.",
+        "NTLM is unavailable in this preview: a compatible authentication environment has not been validated. Use an existing script for this scheme.",
       ),
     );
     root.append(authentication);
@@ -329,9 +340,63 @@ export function integrationBuilder(
       ),
       node(
         "p",
-        "Choose a new file path. Existing files are rejected to prevent accidental overwrites. External output backends are unavailable in this preview until binary capability checks and connection fixtures are validated.",
+        "Choose a new file path. Existing files are rejected to prevent accidental overwrites. External output choices appear only for the tested k6 v2.3.x capability profile. Other binaries remain script-first.",
       ),
     );
+    const external = config.externalOutput;
+    outputs.append(
+      field(
+        "External destination",
+        external?.kind ?? "none",
+        (value) => {
+          if (value === "none") delete config.externalOutput;
+          else
+            config.externalOutput = {
+              kind: value as "influxdb" | "experimental-prometheus-rw",
+              endpoint: "http://localhost:8086/loaddeck",
+              usernameVariable: "",
+              passwordVariable: "",
+              enabled: true,
+            };
+          render();
+        },
+        ["none", ...availableOutputs],
+      ),
+    );
+    if (external) {
+      outputs.append(
+        field(
+          "Enable metrics egress",
+          external.enabled,
+          (v) => (external.enabled = v === "true"),
+        ),
+        field(
+          "Output endpoint",
+          external.endpoint,
+          (v) => (external.endpoint = v),
+        ),
+        field(
+          "Output username variable (optional)",
+          external.usernameVariable,
+          (v) => (external.usernameVariable = v),
+        ),
+        field(
+          "Output password variable (optional)",
+          external.passwordVariable,
+          (v) => (external.passwordVariable = v),
+        ),
+        button("Store output username", () =>
+          post({ type: "credential", name: external.usernameVariable }),
+        ),
+        button("Store output password", () =>
+          post({ type: "credential", name: external.passwordVariable }),
+        ),
+        node(
+          "p",
+          "Metrics leave your machine when enabled. InfluxDB requires a v1-compatible backend; Prometheus requires remote-write enabled. Custom xk6 and Grafana Cloud outputs remain script-first.",
+        ),
+      );
+    }
     root.append(outputs);
     for (const detail of root.querySelectorAll("details"))
       if (opened.has(detail.querySelector("summary")?.textContent))

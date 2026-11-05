@@ -9,7 +9,15 @@ export interface ProtocolConfig {
   plaintext: boolean;
 }
 export interface Authentication {
-  mode: "none" | "basic" | "bearer" | "apiKey" | "cookie" | "oauth2" | "mtls";
+  mode:
+    | "none"
+    | "basic"
+    | "digest"
+    | "bearer"
+    | "apiKey"
+    | "cookie"
+    | "oauth2"
+    | "mtls";
   usernameVariable: string;
   secretVariable: string;
   keyName: string;
@@ -32,6 +40,26 @@ export interface FileOutput {
   path: string;
 }
 export function validateIntegrations(c: QuickTest): void {
+  if (c.bodyMode === "form" || c.bodyMode === "multipart") {
+    const fields = JSON.parse(c.body || "{}");
+    if (
+      !fields ||
+      typeof fields !== "object" ||
+      Array.isArray(fields) ||
+      Object.values(fields).some((v) => typeof v !== "string")
+    )
+      throw new Error("Form fields must be a JSON object of string values.");
+    if (
+      c.bodyMode === "multipart" &&
+      (!c.upload?.path ||
+        !c.upload.field ||
+        !c.upload.filename ||
+        !c.upload.contentType)
+    )
+      throw new Error(
+        "Multipart requires a selected file, field name, filename and content type.",
+      );
+  }
   const p = c.protocol;
   if (p) {
     if (!["http", "http2", "ws", "grpc"].includes(p.kind))
@@ -90,15 +118,30 @@ export function validateIntegrations(c: QuickTest): void {
     if (check.enabled && !allowed.includes(check.kind))
       throw new Error(`Check ${check.name} is not applicable to ${kind}.`);
   }
+  if (c.scenarios)
+    for (const scenario of c.scenarios) {
+      const target = new URL(scenario.url || c.url);
+      const base = new URL(c.url);
+      if (target.protocol !== base.protocol)
+        throw new Error(
+          "Scenario target scheme must match the selected protocol.",
+        );
+    }
   const auth = c.authentication;
   if (auth && auth.mode !== "none") {
     if (
-      !["basic", "bearer", "apiKey", "cookie", "oauth2", "mtls"].includes(
-        auth.mode,
-      )
+      ![
+        "basic",
+        "digest",
+        "bearer",
+        "apiKey",
+        "cookie",
+        "oauth2",
+        "mtls",
+      ].includes(auth.mode)
     )
       throw new Error(
-        "Authentication mode is unavailable. Digest and NTLM require separate compatible-environment validation.",
+        "Authentication mode is unavailable. NTLM requires separate compatible-environment validation.",
       );
     const variable = (v: string) => {
       if (!/^[A-Z_][A-Z0-9_]*$/.test(v))
@@ -112,7 +155,7 @@ export function validateIntegrations(c: QuickTest): void {
       if (p?.kind === "grpc" || p?.kind === "ws")
         throw new Error("mTLS builder currently supports HTTP only.");
     } else variable(auth.secretVariable);
-    if (auth.mode === "basic" || auth.mode === "oauth2")
+    if (["basic", "digest", "oauth2"].includes(auth.mode))
       variable(auth.usernameVariable);
     if (
       (auth.mode === "apiKey" || auth.mode === "cookie") &&
@@ -177,6 +220,12 @@ export function validateIntegrations(c: QuickTest): void {
 }
 export function credentialVariables(c: QuickTest): string[] {
   const a = c.authentication;
+  const urlVariables = [
+    c.url,
+    ...(c.scenarios ?? []).map((s) => s.url),
+  ].flatMap((value) =>
+    [...value.matchAll(/\$\{([A-Z_][A-Z0-9_]*)\}/g)].map((match) => match[1]!),
+  );
   const list = Object.values(c.headers).flatMap((v) =>
     /^\$\{[A-Z_][A-Z0-9_]*\}$/.test(v) ? [v.slice(2, -1)] : [],
   );
@@ -184,9 +233,17 @@ export function credentialVariables(c: QuickTest): string[] {
     if (a.mode === "mtls")
       list.push(a.certificateVariable, a.privateKeyVariable);
     else list.push(a.secretVariable);
-    if (["basic", "oauth2"].includes(a.mode)) list.push(a.usernameVariable);
+    if (["basic", "digest", "oauth2"].includes(a.mode))
+      list.push(a.usernameVariable);
   }
-  return [...new Set(list)];
+  if (c.externalOutput?.enabled)
+    list.push(
+      ...[
+        c.externalOutput.usernameVariable,
+        c.externalOutput.passwordVariable,
+      ].filter(Boolean),
+    );
+  return [...new Set([...list, ...urlVariables])];
 }
 export function parseCsv(text: string): Record<string, string>[] {
   const rows: string[][] = [];

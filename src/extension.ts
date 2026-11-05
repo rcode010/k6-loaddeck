@@ -173,6 +173,16 @@ export function activate(context: vscode.ExtensionContext): void {
         )) !== "Write raw outputs"
       )
         return false;
+      if (config.externalOutput?.enabled) {
+        if (
+          (await vscode.window.showWarningMessage(
+            `Send metrics to ${config.externalOutput.endpoint}? Metrics leave this machine and may include scenario tags and dataset values. Ensure this backend is authorized and already configured.`,
+            { modal: true },
+            "Send metrics",
+          )) !== "Send metrics"
+        )
+          return false;
+      }
       const highScenario = (config.scenarios ?? []).some(
         (s) =>
           Math.max(
@@ -319,7 +329,7 @@ export function activate(context: vscode.ExtensionContext): void {
     }
     if (message.type === "chooseFile") {
       if (
-        !["dataset", "proto", "jsonOutput", "csvOutput"].includes(
+        !["dataset", "proto", "jsonOutput", "csvOutput", "upload"].includes(
           message.purpose,
         )
       )
@@ -338,7 +348,10 @@ export function activate(context: vscode.ExtensionContext): void {
         : (
             await vscode.window.showOpenDialog({
               canSelectMany: false,
-              filters: { [extension]: [extension] },
+              filters:
+                message.purpose === "upload"
+                  ? undefined
+                  : { [extension]: [extension] },
             })
           )?.[0];
       if (uri) {
@@ -383,6 +396,8 @@ export function activate(context: vscode.ExtensionContext): void {
       return;
     }
     if (message.type === "stop") {
+      if (message.id !== state.active?.id)
+        throw new Error("This stop request refers to an earlier run.");
       runner.stop();
       send();
       return;

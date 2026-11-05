@@ -1,6 +1,6 @@
 {
   "name": "k6-loaddeck",
-  "displayName": "LoadDeck — k6 Performance Testing",
+  "displayName": "LoadDeck \u2014 k6 Performance Testing",
   "description": "GUI-first local performance testing powered by Grafana k6.",
   "version": "0.1.0",
   "private": true,
@@ -32,9 +32,11 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "tsx --test test/*.test.ts",
-    "check": "npm run typecheck && npm run lint && npm test && npm run build",
-    "package": "npm run build && vsce package --allow-missing-repository --skip-license",
-    "vscode:prepublish": "npm run build"
+    "check": "npm run typecheck && npm run lint && npm run build && npm test",
+    "package": "vsce package --skip-license --no-dependencies",
+    "vscode:prepublish": "npm run build",
+    "test:host": "node scripts/test-host.mjs",
+    "test:vscode:ui": "node scripts/test-vscode-ui.mjs"
   },
   "contributes": {
     "commands": [
@@ -60,7 +62,7 @@
       },
       {
         "command": "loaddeck.runFile",
-        "title": "Run Test File…",
+        "title": "Run Test File\u2026",
         "category": "LoadDeck"
       },
       {
@@ -171,5 +173,9 @@
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.46.0",
     "ws": "^8.22.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rcode010/k6-loaddeck.git"
   }
 }

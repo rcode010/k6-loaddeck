@@ -1,3 +1,4 @@
+import type { ExternalOutput } from "./outputs";
 import type {
   ProtocolConfig,
   Authentication,
@@ -20,6 +21,7 @@ export interface QuickTest {
   authentication?: Authentication;
   dataset?: Dataset;
   outputs?: FileOutput[];
+  externalOutput?: ExternalOutput;
   scenarios?: Scenario[];
   checks?: CheckRule[];
   thresholdRules?: ThresholdRule[];
@@ -32,7 +34,13 @@ export interface QuickTest {
   sleep: number;
   headers: Record<string, string>;
   body: string;
-  bodyMode: "text" | "json";
+  bodyMode: "text" | "json" | "form" | "multipart";
+  upload?: {
+    path: string;
+    field: string;
+    filename: string;
+    contentType: string;
+  };
   expectedStatus?: number;
   thresholds: Record<string, string[]>;
 }
@@ -70,6 +78,7 @@ export interface Run {
   target: string;
   method: string;
   fingerprint: string;
+  conditions?: Record<string, string>;
   scriptIdentity?: string;
   config?: QuickTest;
   rerunnable: boolean;
@@ -93,6 +102,7 @@ export interface Installation {
   ready: boolean;
   version: string;
   error?: string;
+  externalOutputs?: string[];
 }
 export type Screen = "home" | "run" | "history" | "compare";
 export interface ViewState {
@@ -105,7 +115,8 @@ export interface ViewState {
   defaults: { testKind: "smoke" | "load"; vus: number; duration: string };
 }
 export type ClientMessage =
-  | { type: "ready" | "check" | "stop" | "runFile" | "logs" | "clear" }
+  | { type: "ready" | "check" | "runFile" | "logs" | "clear" }
+  | { type: "stop"; id: string }
   | { type: "navigate"; screen: Screen }
   | { type: "run" | "save" | "preview"; config: QuickTest }
   | {
@@ -116,7 +127,7 @@ export type ClientMessage =
   | { type: "credential"; name: string }
   | {
       type: "chooseFile";
-      purpose: "dataset" | "proto" | "jsonOutput" | "csvOutput";
+      purpose: "dataset" | "proto" | "jsonOutput" | "csvOutput" | "upload";
       format?: "json" | "csv";
     };
 export const defaultTest: QuickTest = {

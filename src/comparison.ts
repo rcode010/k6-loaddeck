@@ -29,6 +29,20 @@ export function compareRuns(
     notes.push(
       "Unequal test conditions: target, request, workload, assertions or script content differ. Figures are factual; no performance verdict is issued.",
     );
+  if (!comparable && baseline.conditions && candidate.conditions) {
+    for (const key of new Set([
+      ...Object.keys(baseline.conditions),
+      ...Object.keys(candidate.conditions),
+    ]))
+      if (baseline.conditions[key] !== candidate.conditions[key])
+        notes.push(
+          `${key}: baseline ${baseline.conditions[key] ?? "unavailable"}; candidate ${candidate.conditions[key] ?? "unavailable"}.`,
+        );
+    if (notes.length === 1)
+      notes.push(
+        "Request headers, payload, target parameters, checks or data references differ; sensitive values are omitted.",
+      );
+  }
   if (
     [baseline, candidate].some(
       (r) => r.state !== "completed" && r.state !== "threshold_failed",

@@ -1,3 +1,4 @@
+import { externalEnvironment, supportedExternalOutputs } from "./outputs";
 import { credentialVariables, parseCsv } from "./integrations";
 import { spawn, execFile, type ChildProcess } from "node:child_process";
 import { promisify } from "node:util";
@@ -32,7 +33,11 @@ export async function discover(binary: string): Promise<Installation> {
     const version = result.stdout.trim();
     if (!/k6 v?\d+\.\d+/i.test(version))
       throw new Error("Executable did not identify itself as k6.");
-    return { ready: true, version };
+    return {
+      ready: true,
+      version,
+      externalOutputs: supportedExternalOutputs(version),
+    };
   } catch {
     return {
       ready: false,
@@ -91,9 +96,56 @@ export class K6Runner {
       method: config?.method ?? "Script",
       fingerprint: fingerprint(
         config
-          ? { ...config, name: undefined }
+          ? {
+              ...config,
+              name: undefined,
+              outputs: undefined,
+              externalOutput: undefined,
+            }
           : { script, content: await readFile(script!, "utf8") },
       ),
+      conditions: config
+        ? {
+            target: safeTarget(config.url),
+            method: config.method,
+            protocol: config.protocol?.kind ?? "http",
+            workload: JSON.stringify(
+              config.scenarios
+                ?.filter((s) => s.enabled)
+                .map((s) => ({
+                  name: s.name,
+                  executor: s.executor,
+                  vus: s.vus,
+                  duration: s.duration,
+                  stages: s.stages,
+                  startTime: s.startTime,
+                  rate: s.rate,
+                  iterations: s.iterations,
+                  preAllocatedVUs: s.preAllocatedVUs,
+                  maxVUs: s.maxVUs,
+                })) ?? {
+                kind: config.testKind,
+                vus: config.vus,
+                duration: config.duration,
+                sleep: config.sleep,
+              },
+            ),
+            authentication: config.authentication?.mode ?? "none",
+            data: config.dataset
+              ? `${config.dataset.format}; ${config.dataset.strategy}; ${config.dataset.exhaustion}`
+              : "none",
+            thresholds: JSON.stringify({
+              base: config.thresholds,
+              rules: config.thresholdRules?.map((r) => ({
+                metric: r.metric,
+                aggregation: r.aggregation,
+                operator: r.operator,
+                value: r.value,
+                abortOnFail: r.abortOnFail,
+              })),
+            }),
+          }
+        : undefined,
       scriptIdentity: script ? fingerprint(path.resolve(script)) : undefined,
       config: config ? safeConfig(config) : undefined,
       rerunnable: config ? !!safeConfig(config) : false,
@@ -127,7 +179,29 @@ export class K6Runner {
         K6_NO_USAGE_REPORT: "true",
         NO_COLOR: "1",
       };
-      if (config) environment.LOADDECK_SUMMARY = summaryFile;
+      if (config) {
+        for (const name of Object.keys(environment))
+          if (name.startsWith("K6_")) delete environment[name];
+        environment.K6_NO_USAGE_REPORT = "true";
+        environment.LOADDECK_SUMMARY = summaryFile;
+      }
+      if (config?.externalOutput?.enabled) {
+        if (
+          !supportedExternalOutputs(version).includes(
+            config.externalOutput.kind,
+          )
+        )
+          throw new Error(
+            "External outputs are only validated for k6 v2.3.x in this preview.",
+          );
+        Object.assign(
+          environment,
+          externalEnvironment(
+            config.externalOutput,
+            (name) => environment[name],
+          ),
+        );
+      }
       const secrets = config
         ? credentialVariables(config)
             .map((name) => environment[name] ?? "")
@@ -137,6 +211,15 @@ export class K6Runner {
         for (const name of credentialVariables(config))
           if (!environment[name])
             throw new Error(`Missing credential variable: ${name}`);
+        if (config.upload) {
+          const info = await open(config.upload.path, "r");
+          try {
+            if ((await info.stat()).size > 20 * 1024 * 1024)
+              throw new Error("Upload exceeds the 20 MiB limit.");
+          } finally {
+            await info.close();
+          }
+        }
         if (config.dataset?.file) {
           const file = await open(config.dataset.file, "r");
           try {
@@ -162,7 +245,13 @@ export class K6Runner {
             );
         }
       }
-      const args = ["run", "--out", `json=${metricsFile}`];
+      const args = ["run"];
+      if (config) {
+        const configFile = path.join(directory, "config.json");
+        await writeFile(configFile, "{}", { mode: 0o600 });
+        args.push("--config", configFile);
+      }
+      args.push("--out", `json=${metricsFile}`);
       for (const output of config?.outputs ?? []) {
         if (!path.isAbsolute(output.path))
           throw new Error("Output paths must be absolute.");
@@ -170,6 +259,13 @@ export class K6Runner {
         await file.close();
         args.push("--out", `${output.format}=${output.path}`);
       }
+      if (config?.externalOutput?.enabled)
+        args.push(
+          "--out",
+          config.externalOutput.kind === "influxdb"
+            ? `influxdb=${config.externalOutput.endpoint}`
+            : config.externalOutput.kind,
+        );
       args.push(scriptFile);
       const collector = new Aggregator(started);
       const parser = new JsonLines();
@@ -182,6 +278,12 @@ export class K6Runner {
         try {
           const file = await open(metricsFile, "r");
           try {
+            if ((await file.stat()).size > 256 * 1024 * 1024) {
+              log(
+                "Internal metric stream exceeded 256 MiB; stopping to protect disk space.",
+              );
+              this.stop();
+            }
             const buffer = Buffer.alloc(256 * 1024);
             for (let i = 0; i < 16; i++) {
               const { bytesRead } = await file.read(
@@ -209,7 +311,13 @@ export class K6Runner {
         Object.assign(run, collector.snapshot(run.elapsedMs));
         onUpdate({ ...run });
       };
+      let outputError = false;
       const log = (chunk: string) => {
+        if (
+          config?.externalOutput?.enabled &&
+          /level=error|connection refused|couldn.t flush/i.test(chunk)
+        )
+          outputError = true;
         run.logs.push(redactLog(chunk, secrets));
         if (run.logs.length > 200) run.logs.splice(0, run.logs.length - 200);
       };
@@ -287,15 +395,18 @@ export class K6Runner {
           const raw = JSON.parse(await readFile(summaryFile, "utf8")) as {
             metrics: Record<string, { values: Record<string, number> }>;
           };
-          run.protocolMetrics = Object.fromEntries(
-            Object.entries(raw.metrics)
-              .filter(([name]) => /^(ws_|grpc_)/.test(name))
-              .flatMap(([name, metric]) =>
-                Object.entries(metric.values)
-                  .filter(([, value]) => Number.isFinite(value))
-                  .map(([key, value]) => [`${name}.${key}`, value]),
-              ),
-          );
+          run.protocolMetrics = {
+            ...run.protocolMetrics,
+            ...Object.fromEntries(
+              Object.entries(raw.metrics)
+                .filter(([name]) => /^(ws_|grpc_)/.test(name))
+                .flatMap(([name, metric]) =>
+                  Object.entries(metric.values)
+                    .filter(([, value]) => Number.isFinite(value))
+                    .map(([key, value]) => [`${name}.${key}`, value]),
+                ),
+            ),
+          };
           run.summarySource = "k6-summary";
         } catch {
           log(
@@ -304,11 +415,15 @@ export class K6Runner {
         }
       }
       run.exitCode = result.code;
+      if (outputError)
+        log(
+          "External output reported an error. Metrics delivery was not verified.",
+        );
       run.state = this.cancelled
         ? "cancelled"
         : result.code === 99
           ? "threshold_failed"
-          : result.code === 0
+          : result.code === 0 && !outputError
             ? "completed"
             : "execution_failed";
       if (parser.malformed)

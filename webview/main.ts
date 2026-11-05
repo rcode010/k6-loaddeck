@@ -24,6 +24,8 @@ let search = "";
 let kind = "";
 let outcome = "";
 let sort = "newest";
+let fromDate = "";
+let toDate = "";
 let baseline = "";
 let candidate = "";
 let initial = true;
@@ -54,6 +56,7 @@ function field(
   hint?: string,
 ): HTMLLabelElement {
   const wrap = element("label", undefined, "field");
+  input.setAttribute("aria-label", label);
   wrap.append(element("span", label), input);
   if (hint) wrap.append(element("small", hint));
   return wrap;
@@ -180,8 +183,14 @@ function configForm(): HTMLElement {
     field("Duration", duration, "Examples: 10s, 30s, 5m."),
   );
   preset.addEventListener("change", () => {
-    vus.value = preset.value === "load" ? "10" : "1";
-    duration.value = preset.value === "load" ? "30s" : "10s";
+    const presets: Record<string, [string, string]> = {
+      smoke: ["1", "10s"],
+      load: ["10", "30s"],
+      stress: ["10", "30s"],
+      spike: ["30", "10s"],
+      soak: ["5", "30m"],
+    };
+    [vus.value, duration.value] = presets[preset.value] ?? ["1", "10s"];
   });
   const advanced = element("details");
   advanced.append(element("summary", "Advanced request options"));
@@ -197,6 +206,8 @@ function configForm(): HTMLElement {
     [
       ["text", "Plain text"],
       ["json", "JSON"],
+      ["form", "Form-encoded fields (JSON object)"],
+      ["multipart", "Multipart fields (JSON object)"],
     ],
     draft.bodyMode,
   );
@@ -234,8 +245,29 @@ function configForm(): HTMLElement {
       'Example: {"http_req_duration":["p(95)<500"],"checks":["rate>0.99"]}',
     ),
   );
+  const upload = element("details");
+  upload.append(element("summary", "Multipart file upload"));
+  const uploadField = input(draft.upload?.field ?? "file"),
+    uploadName = input(draft.upload?.filename ?? "upload.bin"),
+    uploadType = input(draft.upload?.contentType ?? "application/octet-stream");
+  upload.append(
+    button("Choose upload file", () =>
+      post({ type: "chooseFile", purpose: "upload" }),
+    ),
+    field("File field name", uploadField),
+    field("Upload filename", uploadName),
+    field("Upload content type", uploadType),
+    element(
+      "p",
+      draft.upload?.path ?? "No upload selected. Maximum file size: 20 MiB.",
+    ),
+  );
+  advanced.append(upload);
   const builder = workloadBuilder(draft);
-  advanced.append(builder, integrationBuilder(draft, post));
+  advanced.append(
+    builder,
+    integrationBuilder(draft, post, state?.installation.externalOutputs ?? []),
+  );
   advanced.addEventListener("protocolChanged", () =>
     builder.dispatchEvent(new Event("refreshBuilder")),
   );
@@ -259,6 +291,14 @@ function configForm(): HTMLElement {
       bodyMode: bodyMode.value as QuickTest["bodyMode"],
       expectedStatus: expected.value ? Number(expected.value) : undefined,
       thresholds: JSON.parse(thresholds.value),
+      upload: draft.upload
+        ? {
+            ...draft.upload,
+            field: uploadField.value,
+            filename: uploadName.value,
+            contentType: uploadType.value,
+          }
+        : undefined,
     });
     remember();
     return draft;
@@ -496,7 +536,9 @@ function dashboard(): HTMLElement {
     ),
   );
   if (state!.active)
-    strip.append(button("Stop Test", () => post({ type: "stop" }), "danger"));
+    strip.append(
+      button("Stop Test", () => post({ type: "stop", id: run.id }), "danger"),
+    );
   main.append(strip, metrics(run));
   if (run.scenarioMetrics && Object.keys(run.scenarioMetrics).length) {
     const filter = select(
@@ -539,7 +581,7 @@ function dashboard(): HTMLElement {
     chart(run, "failures", "HTTP failures · %"),
     chart(run, "vus", "Virtual users"),
   );
-  main.append(charts);
+  if (run.protocol !== "ws" && run.protocol !== "grpc") main.append(charts);
   main.append(
     notice(
       run.summarySource === "k6-summary"
@@ -547,6 +589,28 @@ function dashboard(): HTMLElement {
         : "Observed metrics. Authoritative final percentiles and thresholds are unavailable until a generated test produces its summary.",
     ),
   );
+  const protocols = Object.entries(run.protocolMetrics ?? {}).filter(([key]) =>
+    key.startsWith("negotiated."),
+  );
+  if (protocols.length)
+    main.append(
+      element(
+        "p",
+        `Negotiated protocols observed: ${protocols.map(([key, value]) => `${key.slice(11)} (${format(value, 0)} requests)`).join(", ")}`,
+      ),
+    );
+  const metadata = element("details");
+  metadata.append(
+    element("summary", "Execution configuration"),
+    element(
+      "p",
+      `${run.k6Version} · Exit code: ${run.exitCode ?? "unavailable"} · Source: ${run.summarySource}`,
+    ),
+    element("p", `p99 latency: ${format(run.metrics.p99)} ms`),
+  );
+  for (const [key, value] of Object.entries(run.conditions ?? {}))
+    metadata.append(element("p", `${key}: ${value}`));
+  main.append(metadata);
   if (run.thresholds.length) {
     const section = element("section", undefined, "card");
     section.append(element("h2", "Thresholds"));
@@ -558,6 +622,18 @@ function dashboard(): HTMLElement {
         ),
       );
     main.append(section);
+  }
+  if (run.checkResults?.length) {
+    const checks = element("section", undefined, "card");
+    checks.append(element("h2", "Check results"));
+    for (const check of run.checkResults)
+      checks.append(
+        element(
+          "p",
+          `${check.name} · ${check.passes} passed · ${check.fails} failed`,
+        ),
+      );
+    main.append(checks);
   }
   if (run.metrics.checksPassed !== undefined)
     main.append(
@@ -572,6 +648,12 @@ function dashboard(): HTMLElement {
       post({ type: "rerun", id: run.id }),
     );
     rerun.disabled = !run.rerunnable;
+    if (run.config)
+      actions.append(
+        button("Save as Script", () =>
+          post({ type: "save", config: run.config! }),
+        ),
+      );
     actions.append(
       rerun,
       button("Edit configuration", () => {
@@ -596,7 +678,13 @@ function dashboard(): HTMLElement {
   const logs = element("details");
   logs.append(element("summary", "Execution logs"));
   const pre = element("pre", run.logs.join("\n"));
-  logs.append(pre);
+  const errorsOnly = input("", "checkbox");
+  errorsOnly.addEventListener("change", () => {
+    pre.textContent = run.logs
+      .filter((line) => !errorsOnly.checked || /error|fail|warn/i.test(line))
+      .join("\n");
+  });
+  logs.append(field("Errors and warnings only", errorsOnly), pre);
   main.append(logs);
   return main;
 }
@@ -728,11 +816,30 @@ function history(): HTMLElement {
     sort = order.value;
     render();
   });
-  filters.append(query, type, result, order);
+  const from = input(fromDate, "date"),
+    to = input(toDate, "date");
+  from.addEventListener("change", () => {
+    fromDate = from.value;
+    render();
+  });
+  to.addEventListener("change", () => {
+    toDate = to.value;
+    render();
+  });
+  filters.append(
+    query,
+    type,
+    result,
+    order,
+    field("From date", from),
+    field("Through date", to),
+  );
   main.append(filters);
   const runs = state!.runs
     .filter(
       (r) =>
+        (!fromDate || r.startedAt.slice(0, 10) >= fromDate) &&
+        (!toDate || r.startedAt.slice(0, 10) <= toDate) &&
         (!kind || r.testKind === kind) &&
         (!outcome || r.state === outcome) &&
         `${r.name} ${r.target}`.toLowerCase().includes(search.toLowerCase()),
@@ -926,7 +1033,14 @@ post({ type: "ready" });
 window.addEventListener("message", (event: MessageEvent) => {
   const data = event.data;
   if (data.type !== "fileChosen") return;
-  if (data.purpose === "proto" && draft.protocol)
+  if (data.purpose === "upload")
+    draft.upload = {
+      path: data.path,
+      field: draft.upload?.field ?? "file",
+      filename: data.path.split(/[\\/]/).pop() ?? "upload.bin",
+      contentType: "application/octet-stream",
+    };
+  else if (data.purpose === "proto" && draft.protocol)
     draft.protocol.protoFile = data.path;
   else if (data.purpose === "dataset" && draft.dataset) {
     draft.dataset.file = data.path;

@@ -47,6 +47,7 @@ function control(
           : "text";
     if (typeof value === "boolean") input.checked = value;
   }
+  input.setAttribute("aria-label", label);
   input.value = String(value);
   input.addEventListener("change", () =>
     change(
