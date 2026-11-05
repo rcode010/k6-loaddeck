@@ -169,8 +169,14 @@ export function validateScenarios(scenarios: Scenario[]): void {
       integer(s.iterations, "Iterations");
       if (s.maxDuration) duration(s.maxDuration, "Maximum duration");
     }
-    if (s.executor === "constant-vus" || s.executor === "constant-arrival-rate")
+    if (
+      s.executor === "constant-vus" ||
+      s.executor === "constant-arrival-rate"
+    ) {
       duration(s.duration, "Scenario duration");
+      if (durationSeconds(s.duration!) < 1)
+        throw new Error("Scenario duration must be at least 1 second.");
+    }
     if (s.executor.startsWith("ramping-")) {
       if (!Array.isArray(s.stages) || !s.stages.length || s.stages.length > 100)
         throw new Error("Add 1–100 ramp stages.");

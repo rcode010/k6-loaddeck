@@ -49,9 +49,9 @@ export function validateQuickTest(value: unknown): QuickTest {
     throw new Error("Virtual users: enter an integer from 1 to 10000.");
   const duration =
     typeof c.duration === "string" ? durationSeconds(c.duration) : NaN;
-  if (!Number.isFinite(duration) || duration <= 0 || duration > 86400)
+  if (!Number.isFinite(duration) || duration < 1 || duration > 86400)
     throw new Error(
-      "Duration: use a positive duration up to 24 hours, such as 10s or 5m.",
+      "Duration: use at least 1 second and at most 24 hours, such as 10s or 5m.",
     );
   if (!Number.isFinite(c.sleep) || c.sleep < 0 || c.sleep > 3600)
     throw new Error("Think time: enter 0–3600 seconds.");

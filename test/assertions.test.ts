@@ -33,6 +33,15 @@ test("assertions reject malformed status lists, regex flags and misleading scope
   ])
     assert.throws(() => validateChecks([check]));
   validateChecks([rule("bodyRegex", "^hello$", { flags: "im" })]);
+  assert.throws(
+    () =>
+      validateQuickTest({
+        ...defaultTest,
+        url: "http://localhost/",
+        duration: "500ms",
+      }),
+    /at least 1 second/,
+  );
   assert.throws(() =>
     validateQuickTest({
       ...defaultTest,
