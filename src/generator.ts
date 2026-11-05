@@ -4,7 +4,7 @@ import {
   defaultScenario,
   scenarioOptions,
   compileThresholds,
-  checkExpression,
+  checkStatements,
 } from "./workload";
 const json = JSON.stringify;
 export function generateScript(c: QuickTest): string {
@@ -33,26 +33,24 @@ export function generateScript(c: QuickTest): string {
       "method",
       "name",
       "scenario",
+      "group",
+      "check",
       "expected_response",
       "proto",
     ],
   };
-  const checks = (c.checks ?? [])
-    .filter((r) => r.enabled)
-    .map(
-      (r) =>
-        `${json(r.name)}: r => safeCheck(() => ${checkExpression(r, protocol)})`,
-    );
+  const rules = [...(c.checks ?? [])];
   if (c.expectedStatus !== undefined && ["http", "http2"].includes(protocol))
-    checks.push(
-      `${json(`status is ${c.expectedStatus}`)}: r => r.status === ${c.expectedStatus}`,
-    );
-  const assertions = checks.length
-    ? `check(response, { ${checks.join(", ")} });`
-    : "";
+    rules.push({
+      name: `status is ${c.expectedStatus}`,
+      kind: "status",
+      value: String(c.expectedStatus),
+      path: "",
+      enabled: true,
+    });
   const imports = [
     "import http from 'k6/http';",
-    "import { check, sleep } from 'k6';",
+    "import { check, sleep, group } from 'k6';",
     "import encoding from 'k6/encoding';",
     "import exec from 'k6/execution';",
   ];
@@ -70,6 +68,8 @@ export function generateScript(c: QuickTest): string {
     init += `const client = new grpc.Client();\nclient.load(${json([...c.protocol!.importPaths, path.dirname(c.protocol!.protoFile)])}, ${json(path.basename(c.protocol!.protoFile))});\n`;
   const helper = `function required(name) { const value = __ENV[name]; if (!value) throw new Error('Missing runtime variable: ' + name); return value; }
 function safeCheck(fn) { try { return Boolean(fn()); } catch { return false; } }
+function headerValue(response, name) { const headers = response.headers || {}; const key = Object.keys(headers).find(key => key.toLowerCase() === name.toLowerCase()); return key === undefined ? undefined : headers[key]; }
+function utf8Length(value) { let bytes = 0; for (let index = 0; index < value.length; index++) { const point = value.codePointAt(index); bytes += point <= 127 ? 1 : point <= 2047 ? 2 : point <= 65535 ? 3 : 4; if (point > 65535) index++; } return bytes; }
 function jsonPath(value, path) { return path.split('.').reduce((v, key) => v == null ? undefined : v[key], value); }
 function template(value, row) { return String(value).replace(/\\$\\{([A-Z_][A-Z0-9_]*)\\}/g, (_, key) => required(key)).replace(/\\{\\{([A-Za-z0-9_.]+)\\}\\}/g, (_, key) => { const found = jsonPath(row, key); if (found === undefined) throw new Error('Missing dataset column: ' + key); return String(found); }); }
 function jsonTemplate(value, row) { if (Array.isArray(value)) return value.map(v => jsonTemplate(v, row)); if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k,v]) => [k,jsonTemplate(v,row)])); if (typeof value === 'string') { const match = /^\\{\\{([A-Za-z0-9_.]+)\\}\\}$/.exec(value); return match ? jsonPath(row, match[1]) : template(value,row); } return value; }
@@ -82,6 +82,13 @@ function oauth() { if (Date.now() < tokenExpiry) return oauthToken; const respon
       : "";
   const functions = scenarios
     .map((s, index) => {
+      const assertions = checkStatements(rules, protocol, s.name);
+      const messageAssertions = checkStatements(
+        rules,
+        protocol,
+        s.name,
+        "message",
+      );
       let row = `const row = ${json(c.dataset?.variables ?? {})};`;
       if (c.dataset?.file) {
         const strategy = c.dataset.strategy;
@@ -121,7 +128,7 @@ function oauth() { if (Date.now() < tokenExpiry) return oauthToken; const respon
       }
       let operation: string;
       if (protocol === "ws")
-        operation = `  const response = ws.connect(target, { headers, tags:{name:${json(s.name)}} }, socket => {\n    socket.on('open', () => socket.send(template(${json(c.protocol!.message)}, row)));\n    socket.on('message', message => { ${checks.length ? `check(message, { ${checks.join(", ")} });` : ""} });\n    socket.setTimeout(() => socket.close(), ${c.protocol!.sessionMs});\n  });\n  check(response, {'WebSocket connected': r => r && r.status === 101});\n`;
+        operation = `  const response = ws.connect(target, { headers, tags:{name:${json(s.name)}} }, socket => {\n    socket.on('open', () => socket.send(template(${json(c.protocol!.message)}, row)));\n    socket.on('message', message => { ${messageAssertions} });\n    socket.setTimeout(() => socket.close(), ${c.protocol!.sessionMs});\n  });\n  check(response, {'WebSocket connected': r => r && r.status === 101});\n`;
       else if (protocol === "grpc")
         operation = `  client.connect(target.replace(/^grpcs?:\\/\\//, ''), { plaintext: ${c.protocol!.plaintext} });\n  try { const response = client.invoke(${json(c.protocol!.grpcMethod)}, jsonTemplate(${c.protocol!.message}, row), { metadata:headers, tags:{name:${json(s.name)}} });\n  ${assertions || "check(response, {'gRPC status OK': r => r && r.status === grpc.StatusOK});"}\n  } finally { client.close(); }\n`;
       else

@@ -1,6 +1,7 @@
 import type { QuickTest } from "../src/model";
 import {
   executors,
+  checkKinds,
   defaultScenario,
   type Scenario,
   type CheckRule,
@@ -255,20 +256,7 @@ export function workloadBuilder(config: QuickTest): HTMLElement {
             rule.kind = v as CheckRule["kind"];
             render();
           },
-          config.protocol?.kind === "ws"
-            ? ["messageContains"]
-            : config.protocol?.kind === "grpc"
-              ? ["grpcStatus", "jsonEquals"]
-              : [
-                  "status",
-                  "duration",
-                  "bodyContains",
-                  "bodyNonempty",
-                  "jsonEquals",
-                  "headerEquals",
-                  "headerExists",
-                  "bodyLength",
-                ],
+          checkKinds(config.protocol?.kind ?? "http"),
         ),
         control("Expected value", rule.value, (v) => (rule.value = v)),
         control("Header or JSON path", rule.path, (v) => (rule.path = v)),
@@ -277,7 +265,51 @@ export function workloadBuilder(config: QuickTest): HTMLElement {
           render();
         }),
       );
-      row.append(grid);
+      if (["bodyRegex", "headerRegex", "messageRegex"].includes(rule.kind))
+        grid.append(
+          control("Regex flags", rule.flags ?? "", (v) => (rule.flags = v)),
+        );
+      grid.append(
+        control("Check group", rule.group ?? "", (v) => (rule.group = v)),
+        control(
+          "Scenarios (comma separated; empty means all)",
+          (rule.scenarios ?? []).join(", "),
+          (v) =>
+            (rule.scenarios = v
+              .split(",")
+              .map((value) => value.trim())
+              .filter(Boolean)),
+        ),
+      );
+      const tags = node("textarea");
+      tags.value = JSON.stringify(rule.tags ?? {}, null, 2);
+      tags.setAttribute("aria-label", "Check tags as JSON");
+      tags.addEventListener("change", () => {
+        try {
+          rule.tags = JSON.parse(tags.value);
+          tags.setCustomValidity("");
+        } catch {
+          tags.setCustomValidity(
+            "Enter a JSON object of nonsecret string tags.",
+          );
+        }
+      });
+      row.append(grid, tags);
+      const help: Partial<Record<CheckRule["kind"], string>> = {
+        statuses: "Comma-separated HTTP status codes, such as 200, 201, 204.",
+        bodyRegex:
+          "Regular expression over response text. Flags: i, m, s, u. Complex patterns can consume substantial CPU.",
+        headerRegex:
+          "Path names the response header; value is a regular expression.",
+        bodyBytes:
+          "Minimum UTF-8 encoded response text size in bytes, after decoding/decompression. This is not transferred network bytes.",
+        bodyLength:
+          "Minimum JavaScript string length in UTF-16 code units; this is not a byte count.",
+        jsonEquals:
+          "Use a dot-separated JSON path and a JSON value. Invalid JSON and absent paths fail the check.",
+        headerEquals: "Header names are matched without case sensitivity.",
+      };
+      if (help[rule.kind]) row.append(node("p", help[rule.kind]));
       checks.append(row);
     }
     checks.append(

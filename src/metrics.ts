@@ -1,4 +1,4 @@
-import type { Bucket, Metrics, ThresholdResult } from "./model";
+import type { Bucket, Metrics, ThresholdResult, CheckResult } from "./model";
 
 export class JsonLines {
   private pending = "";
@@ -31,6 +31,7 @@ export class Aggregator {
   private latencyCount = 0;
   private failures = 0;
   private failureCount = 0;
+  private checkResults = new Map<string, CheckResult>();
   private checksPassed = 0;
   private checksFailed = 0;
   private checkCount = 0;
@@ -144,6 +145,27 @@ export class Aggregator {
         b.vus = value;
         break;
       case "checks":
+        if (r.data.tags?.check) {
+          const name = r.data.tags.check,
+            group = r.data.tags.group,
+            scenario = r.data.tags.scenario,
+            request = r.data.tags.request;
+          const key = JSON.stringify([name, group, scenario, request]);
+          if (this.checkResults.has(key) || this.checkResults.size < 2000) {
+            const result = this.checkResults.get(key) ?? {
+              name,
+              group,
+              scenario,
+              request,
+              passes: 0,
+              fails: 0,
+              source: "observed" as const,
+            };
+            if (value) result.passes++;
+            else result.fails++;
+            this.checkResults.set(key, result);
+          }
+        }
         this.checkCount++;
         if (value) this.checksPassed++;
         else this.checksFailed++;
@@ -183,11 +205,15 @@ export class Aggregator {
   }
   snapshot(elapsedMs: number): {
     metrics: Metrics;
+    checkResults: CheckResult[];
     series: Bucket[];
     scenarioMetrics: Record<string, Metrics>;
     protocolMetrics: Record<string, number>;
   } {
     return {
+      checkResults: [...this.checkResults.values()].map((result) => ({
+        ...result,
+      })),
       scenarioMetrics: Object.fromEntries(
         [...this.scopes].map(([name, collector]) => [
           name,

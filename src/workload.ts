@@ -34,23 +34,6 @@ export interface Scenario {
   url: string;
   tags: Record<string, string>;
 }
-export interface CheckRule {
-  name: string;
-  kind:
-    | "status"
-    | "duration"
-    | "bodyContains"
-    | "bodyNonempty"
-    | "jsonEquals"
-    | "headerEquals"
-    | "headerExists"
-    | "bodyLength"
-    | "messageContains"
-    | "grpcStatus";
-  value: string;
-  path: string;
-  enabled: boolean;
-}
 export interface ThresholdRule {
   metric: string;
   aggregation: string;
@@ -263,69 +246,11 @@ export function compileThresholds(
   }
   return result;
 }
-export function validateChecks(rules: CheckRule[]): void {
-  if (!Array.isArray(rules) || rules.length > 100)
-    throw new Error("Configure at most 100 checks.");
-  const names = new Set<string>();
-  for (const rule of rules) {
-    if (!rule.name || rule.name.length > 120 || names.has(rule.name))
-      throw new Error("Check names must be unique and nonempty.");
-    names.add(rule.name);
-    if (
-      ![
-        "status",
-        "duration",
-        "bodyContains",
-        "bodyNonempty",
-        "jsonEquals",
-        "headerEquals",
-        "headerExists",
-        "bodyLength",
-        "messageContains",
-        "grpcStatus",
-      ].includes(rule.kind)
-    )
-      throw new Error("Unsupported check kind.");
-    if (typeof rule.value !== "string" || typeof rule.path !== "string")
-      throw new Error("Invalid check value.");
-    if (
-      ["duration", "status", "grpcStatus", "bodyLength"].includes(rule.kind) &&
-      !/^\d+(\.\d+)?$/.test(rule.value)
-    )
-      throw new Error("This check requires a nonnegative numeric value.");
-    if (rule.kind === "jsonEquals") {
-      if (!/^[A-Za-z0-9_.]+$/.test(rule.path))
-        throw new Error("JSON path: use dot-separated keys.");
-      try {
-        JSON.parse(rule.value);
-      } catch {
-        throw new Error("JSON expected value must be valid JSON.");
-      }
-    }
-  }
-}
-export function checkExpression(rule: CheckRule, protocol: string): string {
-  const val = JSON.stringify(rule.value),
-    key = JSON.stringify(rule.path);
-  switch (rule.kind) {
-    case "status":
-      return `r.status === ${Number(rule.value)}`;
-    case "grpcStatus":
-      return `Number(r.status) === ${Number(rule.value)}`;
-    case "duration":
-      return `r.timings.duration < ${Number(rule.value)}`;
-    case "bodyContains":
-    case "messageContains":
-      return `String(${protocol === "ws" ? "r" : "r.body"} || '').includes(${val})`;
-    case "bodyNonempty":
-      return `Boolean(r.body && r.body.length)`;
-    case "bodyLength":
-      return `Boolean(r.body) && r.body.length >= ${Number(rule.value)}`;
-    case "headerExists":
-      return `r.headers[${key}] !== undefined`;
-    case "headerEquals":
-      return `String(r.headers[${key}]) === ${val}`;
-    case "jsonEquals":
-      return `JSON.stringify(jsonPath(${protocol === "grpc" ? "r.message" : "r.json()"}, ${key})) === ${JSON.stringify(JSON.stringify(JSON.parse(rule.value)))}`;
-  }
-}
+export {
+  validateChecks,
+  checkExpression,
+  parseStatuses,
+  checkStatements,
+  checkKinds,
+} from "./checks";
+export type { CheckRule } from "./checks";

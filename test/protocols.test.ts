@@ -77,7 +77,9 @@ test(
         checks: [
           {
             name: "echo received",
-            kind: "messageContains",
+            kind: "messageRegex",
+            flags: "i",
+            group: "messages",
             value: "hello",
             path: "",
             enabled: true,

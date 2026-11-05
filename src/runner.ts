@@ -405,7 +405,7 @@ export class K6Runner {
             for (const child of value.groups ?? []) collectChecks(child);
           };
           collectChecks(summaryRecord.root_group);
-          run.checkResults = checks;
+          if (!run.checkResults?.length) run.checkResults = checks;
           const raw = JSON.parse(await readFile(summaryFile, "utf8")) as {
             metrics: Record<string, { values: Record<string, number> }>;
           };

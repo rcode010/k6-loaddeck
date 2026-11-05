@@ -630,7 +630,7 @@ function dashboard(): HTMLElement {
       checks.append(
         element(
           "p",
-          `${check.name} · ${check.passes} passed · ${check.fails} failed`,
+          `${check.group ? check.group + " / " : ""}${check.name} · ${check.passes} passed · ${check.fails} failed${check.scenario ? " · " + check.scenario : ""}${check.request ? " · request: " + check.request : ""} · ${check.source ?? "k6-summary"}`,
         ),
       );
     main.append(checks);

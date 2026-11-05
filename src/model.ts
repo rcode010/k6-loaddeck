@@ -65,6 +65,15 @@ export interface Bucket {
   failureCount: number;
   vus?: number;
 }
+export interface CheckResult {
+  name: string;
+  passes: number;
+  fails: number;
+  group?: string;
+  scenario?: string;
+  request?: string;
+  source?: "observed" | "k6-summary";
+}
 export interface ThresholdResult {
   metric: string;
   expression: string;
@@ -93,7 +102,7 @@ export interface Run {
   protocolMetrics?: Record<string, number>;
   metrics: Metrics;
   series: Bucket[];
-  checkResults?: { name: string; passes: number; fails: number }[];
+  checkResults?: CheckResult[];
   thresholds: ThresholdResult[];
   summarySource: "k6-summary" | "observed";
   logs: string[];

@@ -149,6 +149,31 @@ test(
         await page.getByLabel("Condition", { exact: true }).inputValue(),
         "messageContains",
       );
+      await page
+        .getByLabel("Condition", { exact: true })
+        .selectOption("messageRegex");
+      await page.getByLabel("Regex flags", { exact: true }).fill("i");
+      await page.getByLabel("Check group", { exact: true }).fill("messages");
+      await page
+        .getByRole("button", { name: "Preview script", exact: true })
+        .click();
+      const preview = await page.evaluate(() =>
+        (
+          window as unknown as {
+            messages: {
+              type: string;
+              config?: {
+                checks?: { kind: string; flags: string; group: string }[];
+              };
+            }[];
+          }
+        ).messages
+          .filter((message) => message.type === "preview")
+          .at(-1),
+      );
+      assert.equal(preview?.config?.checks?.[0]?.kind, "messageRegex");
+      assert.equal(preview?.config?.checks?.[0]?.flags, "i");
+      assert.equal(preview?.config?.checks?.[0]?.group, "messages");
       view.screen = "home";
       view.installation = {
         ready: false,

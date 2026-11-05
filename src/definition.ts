@@ -153,7 +153,19 @@ export function validateQuickTest(value: unknown): QuickTest {
         );
     }
   }
-  if (c.checks) validateChecks(c.checks);
+  if (c.checks) {
+    validateChecks(c.checks);
+    const names = new Set(
+      (c.scenarios ?? [{ name: "main", enabled: true }])
+        .filter((s) => s.enabled)
+        .map((s) => s.name),
+    );
+    for (const rule of c.checks.filter((rule) => rule.enabled))
+      if (rule.scenarios?.some((name) => !names.has(name)))
+        throw new Error(
+          `Check ${rule.name}: choose enabled scenarios from this test.`,
+        );
+  }
   if (c.thresholdRules) compileThresholds(c.thresholdRules);
   validateIntegrations(c);
   if (!c.protocol && !["http:", "https:"].includes(url.protocol))

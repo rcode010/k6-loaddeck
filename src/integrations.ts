@@ -1,3 +1,4 @@
+import { checkKinds } from "./checks";
 import type { QuickTest } from "./model";
 export interface ProtocolConfig {
   kind: "http" | "http2" | "ws" | "grpc";
@@ -100,21 +101,7 @@ export function validateIntegrations(c: QuickTest): void {
   }
   for (const check of c.checks ?? []) {
     const kind = p?.kind ?? "http";
-    const allowed =
-      kind === "ws"
-        ? ["messageContains"]
-        : kind === "grpc"
-          ? ["grpcStatus", "jsonEquals"]
-          : [
-              "status",
-              "duration",
-              "bodyContains",
-              "bodyNonempty",
-              "jsonEquals",
-              "headerEquals",
-              "headerExists",
-              "bodyLength",
-            ];
+    const allowed = checkKinds(kind);
     if (check.enabled && !allowed.includes(check.kind))
       throw new Error(`Check ${check.name} is not applicable to ${kind}.`);
   }
