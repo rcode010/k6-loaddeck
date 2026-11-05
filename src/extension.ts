@@ -42,8 +42,18 @@ class Navigation implements vscode.TreeDataProvider<vscode.TreeItem> {
     });
   }
 }
+let shutdown: (() => Promise<void>) | undefined;
+export async function deactivate(): Promise<void> {
+  await shutdown?.();
+}
 export function activate(context: vscode.ExtensionContext): void {
   const runner = new K6Runner();
+  shutdown = async () => {
+    runner.dispose();
+    const deadline = Date.now() + 4000;
+    while (runner.busy && Date.now() < deadline)
+      await new Promise((resolve) => setTimeout(resolve, 50));
+  };
   const output = vscode.window.createOutputChannel("LoadDeck");
   const settings = () => vscode.workspace.getConfiguration("loaddeck");
   const history = new HistoryStore(
@@ -130,6 +140,7 @@ export function activate(context: vscode.ExtensionContext): void {
         targets.push(config.authentication.tokenUrl);
       for (const value of [...new Set(targets)]) {
         const target = new URL(value);
+        const origin = `${target.protocol}//${target.host}`;
         const local = ["localhost", "127.0.0.1", "[::1]"].includes(
           target.hostname,
         );
@@ -140,17 +151,17 @@ export function activate(context: vscode.ExtensionContext): void {
         if (
           !local &&
           settings().get("confirmExternalTargets", true) &&
-          !acknowledged.includes(target.origin)
+          !acknowledged.includes(origin)
         ) {
           const response = await vscode.window.showWarningMessage(
-            `Run performance tests against ${target.origin}? Confirm you are authorized to test this service and accept its load impact.`,
+            `Run performance tests against ${origin}? Confirm you are authorized to test this service and accept its load impact.`,
             { modal: true },
             "Authorize target",
           );
           if (response !== "Authorize target") return false;
           await context.globalState.update("authorizedHosts", [
             ...acknowledged,
-            target.origin,
+            origin,
           ]);
         }
       }
@@ -535,7 +546,7 @@ export function activate(context: vscode.ExtensionContext): void {
       "loaddeck.navigation",
       new Navigation(),
     ),
-    { dispose: () => runner.stop() },
+    { dispose: () => runner.dispose() },
   );
 }
 function requireHome(): string {

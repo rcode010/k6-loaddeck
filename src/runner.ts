@@ -51,7 +51,7 @@ export async function discover(binary: string): Promise<Installation> {
 export function redactLog(value: string, secrets: string[] = []): string {
   let result = value
     .replaceAll(String.fromCharCode(27), "")
-    .replace(/https?:\/\/[^\s"'<>]+/g, (match) => safeTarget(match));
+    .replace(/https?:\/\/[^\s"'<>]+/gi, (match) => safeTarget(match));
   for (const secret of secrets
     .flatMap((value) => [
       value,
@@ -69,6 +69,7 @@ export function redactLog(value: string, secrets: string[] = []): string {
 }
 export class K6Runner {
   private child?: ChildProcess;
+  private disposed = false;
   private cancelled = false;
   private forceTimer?: NodeJS.Timeout;
   private active?: Run;
@@ -83,6 +84,7 @@ export class K6Runner {
       | { config: QuickTest; environment?: Record<string, string> }
       | { script: string; environment?: Record<string, string> },
   ): Promise<Run> {
+    if (this.disposed) throw new Error("The k6 runner has been disposed.");
     if (this.busy)
       throw new Error(
         "A test is already running. Stop it before starting another.",
@@ -328,6 +330,7 @@ export class K6Runner {
         run.logs.push(redactLog(chunk, secrets));
         if (run.logs.length > 200) run.logs.splice(0, run.logs.length - 200);
       };
+      if (this.disposed) throw new Error("Extension is shutting down.");
       const child = spawn(binary, args, {
         cwd: script ? path.dirname(script) : directory,
         env: environment,
@@ -456,6 +459,10 @@ export class K6Runner {
       onUpdate({ ...run });
     }
     return run;
+  }
+  dispose(): void {
+    this.disposed = true;
+    this.stop();
   }
   stop(): void {
     if (!this.active || this.forceTimer) return;
