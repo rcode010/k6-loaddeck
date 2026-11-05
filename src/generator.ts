@@ -16,7 +16,7 @@ export function generateScript(c: QuickTest): string {
   const headers = Object.entries(c.headers)
     .map(
       ([key, value]) =>
-        `${json(key)}: ${/^\$\{[A-Z_][A-Z0-9_]*\}$/.test(value) ? `required(${json(value.slice(2, -1))})` : `template(${json(value)}, row)`}`,
+        `[${json(key)}]: ${/^\$\{[A-Z_][A-Z0-9_]*\}$/.test(value) ? `required(${json(value.slice(2, -1))})` : `template(${json(value)}, row)`}`,
     )
     .join(", ");
   const options = {
@@ -79,7 +79,7 @@ export function generateScript(c: QuickTest): string {
 function safeCheck(fn) { try { return Boolean(fn()); } catch { return false; } }
 function headerValue(response, name) { const headers = response.headers || {}; const key = Object.keys(headers).find(key => key.toLowerCase() === name.toLowerCase()); return key === undefined ? undefined : headers[key]; }
 function utf8Length(value) { let bytes = 0; for (let index = 0; index < value.length; index++) { const point = value.codePointAt(index); bytes += point <= 127 ? 1 : point <= 2047 ? 2 : point <= 65535 ? 3 : 4; if (point > 65535) index++; } return bytes; }
-function jsonPath(value, path) { return path.split('.').reduce((v, key) => v == null ? undefined : v[key], value); }
+function jsonPath(value, path) { return path.split('.').reduce((v, key) => v !== null && typeof v === 'object' && Object.prototype.hasOwnProperty.call(v, key) ? v[key] : undefined, value); }
 function template(value, row) { return String(value).replace(/\\$\\{([A-Z_][A-Z0-9_]*)\\}/g, (_, key) => required(key)).replace(/\\{\\{([A-Za-z0-9_.]+)\\}\\}/g, (_, key) => { const found = jsonPath(row, key); if (found === undefined) throw new Error('Missing dataset column: ' + key); return String(found); }); }
 function jsonTemplate(value, row) { if (Array.isArray(value)) return value.map(v => jsonTemplate(v, row)); if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k,v]) => [k,jsonTemplate(v,row)])); if (typeof value === 'string') { const match = /^\\{\\{([A-Za-z0-9_.]+)\\}\\}$/.exec(value); return match ? jsonPath(row, match[1]) : template(value,row); } return value; }
 let oauthToken = ''; let tokenExpiry = 0;
@@ -98,7 +98,7 @@ function oauth() { if (Date.now() < tokenExpiry) return oauthToken; const respon
         s.name,
         "message",
       );
-      let row = `const row = ${json(c.dataset?.variables ?? {})};`;
+      let row = `const row = JSON.parse(${json(json(c.dataset?.variables ?? {}))});`;
       if (c.dataset?.file) {
         const strategy = c.dataset.strategy;
         const position =
@@ -107,7 +107,7 @@ function oauth() { if (Date.now() < tokenExpiry) return oauthToken; const respon
             : strategy === "per-vu"
               ? "exec.vu.idInTest - 1"
               : "exec.scenario.iterationInTest";
-        row = `if (!rows.length) throw new Error('Dataset is empty');\n  const position = ${position};\n  ${c.dataset.exhaustion === "fail" ? "if (position >= rows.length) throw new Error('Dataset exhausted');" : ""}\n  const row = Object.assign({}, ${json(c.dataset.variables)}, rows[position % rows.length]);`;
+        row = `if (!rows.length) throw new Error('Dataset is empty');\n  const position = ${position};\n  ${c.dataset.exhaustion === "fail" ? "if (position >= rows.length) throw new Error('Dataset exhausted');" : ""}\n  const row = { ...JSON.parse(${json(json(c.dataset.variables))}), ...rows[position % rows.length] };`;
       }
       let setup = `${row}\n  let target = template(${json(s.url || c.url)}, row);\n  const headers = { ${headers} };\n`;
       if (c.bodyMode === "json" && c.body)
@@ -131,7 +131,7 @@ function oauth() { if (Date.now() < tokenExpiry) return oauthToken; const respon
           setup += `  headers.Authorization = 'Bearer ' + oauth();\n`;
       }
       if (c.bodyMode === "form" || c.bodyMode === "multipart") {
-        setup += `  const payload = jsonTemplate(${c.body || "{}"}, row);\n`;
+        setup += `  const payload = jsonTemplate(JSON.parse(${json(c.body || "{}")}), row);\n`;
         if (c.bodyMode === "multipart" && c.upload)
           setup += `  payload[${json(c.upload.field)}] = http.file(uploadData, ${json(c.upload.filename)}, ${json(c.upload.contentType)});\n`;
       }
@@ -142,9 +142,9 @@ function oauth() { if (Date.now() < tokenExpiry) return oauthToken; const respon
         });
         operation = `  ${messageAssertions ? "let receivedMessages = 0;\n  " : ""}const response = ws.connect(target, { headers, tags:{name:${json(s.name)}} }, socket => {\n    socket.on('open', () => socket.send(template(${json(c.protocol!.message)}, row)));\n    ${messageAssertions ? `socket.on('message', message => { receivedMessages++; ${messageAssertions} });\n    ` : ""}socket.setTimeout(() => socket.close(), ${c.protocol!.sessionMs});\n  });\n  check(response, {'WebSocket connected': r => r && r.status === 101});\n  ${absent ? `if (receivedMessages === 0) { ${absent} }\n` : ""}`;
       } else if (protocol === "grpc")
-        operation = `  client.connect(target.replace(/^grpcs?:\\/\\//, ''), { plaintext: ${c.protocol!.plaintext} });\n  try { const response = client.invoke(${json(c.protocol!.grpcMethod)}, jsonTemplate(${c.protocol!.message}, row), { metadata:headers, tags:{name:${json(s.name)}} });\n  ${assertions || "check(response, {'gRPC status OK': r => r && r.status === grpc.StatusOK});"}\n  } finally { client.close(); }\n`;
+        operation = `  client.connect(target.replace(/^grpcs?:\\/\\//, ''), { plaintext: ${c.protocol!.plaintext} });\n  try { const response = client.invoke(${json(c.protocol!.grpcMethod)}, jsonTemplate(JSON.parse(${json(c.protocol!.message)}), row), { metadata:headers, tags:{name:${json(s.name)}} });\n  ${assertions || "check(response, {'gRPC status OK': r => r && r.status === grpc.StatusOK});"}\n  } finally { client.close(); }\n`;
       else
-        operation = `  const response = http.request(${json(c.method)}, target, ${["form", "multipart"].includes(c.bodyMode) ? "payload" : c.body ? (c.bodyMode === "json" ? `JSON.stringify(jsonTemplate(${c.body}, row))` : `template(${json(c.body)}, row)`) : "null"}, { headers, ${auth?.mode === "digest" ? "auth:'digest'," : ""}tags:{name:${json(s.name)}}, timeout:'30s' });\n  ${assertions}\n`;
+        operation = `  const response = http.request(${json(c.method)}, target, ${["form", "multipart"].includes(c.bodyMode) ? "payload" : c.body ? (c.bodyMode === "json" ? `JSON.stringify(jsonTemplate(JSON.parse(${json(c.body)}), row))` : `template(${json(c.body)}, row)`) : "null"}, { headers, ${auth?.mode === "digest" ? "auth:'digest'," : ""}tags:{name:${json(s.name)}}, timeout:'30s' });\n  ${assertions}\n`;
       return `export function scenario_${index}() {\n  ${setup}${operation}${s.executor.includes("arrival-rate") ? "" : `  sleep(${c.sleep});\n`}}`;
     })
     .join("\n\n");

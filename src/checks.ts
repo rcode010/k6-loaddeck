@@ -204,7 +204,7 @@ export function checkStatements(
       const predicate = options.missingResponse
         ? "() => false"
         : `r => safeCheck(() => ${checkExpression(rule, protocol)})`;
-      const check = `check(${value}, { ${JSON.stringify(rule.name)}: ${predicate} }, ${JSON.stringify({ ...rule.tags, request: scenario })});`;
+      const check = `check(${value}, { [${JSON.stringify(rule.name)}]: ${predicate} }, ${JSON.stringify({ ...rule.tags, request: scenario })});`;
       return rule.group
         ? `group(${JSON.stringify(rule.group)}, () => { ${check} });`
         : check;
