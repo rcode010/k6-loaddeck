@@ -1,0 +1,169 @@
+{
+  "name": "k6-loaddeck",
+  "displayName": "LoadDeck — k6 Performance Testing",
+  "description": "GUI-first local performance testing powered by Grafana k6.",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "vscode": "^1.96.0"
+  },
+  "categories": [
+    "Testing",
+    "Visualization"
+  ],
+  "main": "./dist/extension.js",
+  "extensionKind": [
+    "workspace"
+  ],
+  "activationEvents": [
+    "onView:loaddeck.navigation"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "Inspect results in Restricted Mode. Test execution requires workspace trust."
+    },
+    "virtualWorkspaces": false
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src webview test scripts",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "tsx --test test/*.test.ts",
+    "check": "npm run typecheck && npm run lint && npm test && npm run build",
+    "package": "npm run build && vsce package --allow-missing-repository --skip-license",
+    "vscode:prepublish": "npm run build"
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "loaddeck.open",
+        "title": "Open Performance Dashboard",
+        "category": "LoadDeck"
+      },
+      {
+        "command": "loaddeck.quick",
+        "title": "Quick Test URL",
+        "category": "LoadDeck"
+      },
+      {
+        "command": "loaddeck.save",
+        "title": "Create Test Script",
+        "category": "LoadDeck"
+      },
+      {
+        "command": "loaddeck.runCurrent",
+        "title": "Run Current Test File",
+        "category": "LoadDeck"
+      },
+      {
+        "command": "loaddeck.runFile",
+        "title": "Run Test File…",
+        "category": "LoadDeck"
+      },
+      {
+        "command": "loaddeck.stop",
+        "title": "Stop Running Test",
+        "category": "LoadDeck"
+      },
+      {
+        "command": "loaddeck.history",
+        "title": "View Test History",
+        "category": "LoadDeck"
+      },
+      {
+        "command": "loaddeck.compare",
+        "title": "Compare Test Results",
+        "category": "LoadDeck"
+      },
+      {
+        "command": "loaddeck.check",
+        "title": "Check Installation",
+        "category": "LoadDeck"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "loaddeck",
+          "title": "LoadDeck",
+          "icon": "media/loaddeck.svg"
+        }
+      ]
+    },
+    "views": {
+      "loaddeck": [
+        {
+          "id": "loaddeck.navigation",
+          "name": "Performance Testing"
+        }
+      ]
+    },
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "loaddeck.runCurrent",
+          "when": "resourceExtname == .js",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "LoadDeck",
+      "properties": {
+        "loaddeck.binaryPath": {
+          "type": "string",
+          "default": "",
+          "description": "k6 executable in the extension host environment.",
+          "scope": "machine"
+        },
+        "loaddeck.defaultTestKind": {
+          "type": "string",
+          "enum": [
+            "smoke",
+            "load"
+          ],
+          "default": "smoke"
+        },
+        "loaddeck.defaultVus": {
+          "type": "number",
+          "default": 1,
+          "minimum": 1,
+          "maximum": 10000
+        },
+        "loaddeck.defaultDuration": {
+          "type": "string",
+          "default": "10s"
+        },
+        "loaddeck.historyLimit": {
+          "type": "number",
+          "default": 50,
+          "minimum": 1,
+          "maximum": 500
+        },
+        "loaddeck.confirmExternalTargets": {
+          "type": "boolean",
+          "default": true
+        },
+        "loaddeck.confirmHighLoad": {
+          "type": "boolean",
+          "default": true
+        }
+      }
+    }
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.0",
+    "@types/node": "^22.19.0",
+    "@types/vscode": "^1.96.0",
+    "@vscode/vsce": "^3.7.1",
+    "esbuild": "^0.25.12",
+    "eslint": "^9.39.0",
+    "prettier": "^3.6.2",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.46.0"
+  }
+}

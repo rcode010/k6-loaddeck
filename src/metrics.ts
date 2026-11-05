@@ -1,0 +1,192 @@
+import type { Bucket, Metrics, ThresholdResult } from "./model";
+
+export class JsonLines {
+  private pending = "";
+  malformed = 0;
+  push(chunk: string, consume: (record: unknown) => void): void {
+    this.pending += chunk;
+    let index: number;
+    while ((index = this.pending.indexOf("\n")) >= 0) {
+      const line = this.pending.slice(0, index);
+      this.pending = this.pending.slice(index + 1);
+      if (!line.trim()) continue;
+      try {
+        consume(JSON.parse(line));
+      } catch {
+        this.malformed++;
+      }
+    }
+    if (this.pending.length > 1024 * 1024) {
+      this.pending = "";
+      this.malformed++;
+    }
+  }
+}
+export class Aggregator {
+  private requests = 0;
+  private latencySum = 0;
+  private latencyCount = 0;
+  private failures = 0;
+  private failureCount = 0;
+  private checksPassed = 0;
+  private checksFailed = 0;
+  private checkCount = 0;
+  private vus?: number;
+  private dropped?: number;
+  private buckets = new Map<number, Bucket>();
+  private bucketWidth = 1;
+  constructor(private startedAt: number) {}
+  add(record: unknown): void {
+    if (!record || typeof record !== "object") return;
+    const r = record as {
+      type?: string;
+      metric?: string;
+      data?: { value?: number; time?: string };
+    };
+    if (
+      r.type !== "Point" ||
+      !r.metric ||
+      !r.data ||
+      !Number.isFinite(r.data.value)
+    )
+      return;
+    const value = r.data.value!;
+    const timestamp = Date.parse(r.data.time ?? "");
+    if (!Number.isFinite(timestamp)) return;
+    const elapsed = Math.max(
+      0,
+      Math.floor((timestamp - this.startedAt) / 1000 / this.bucketWidth) *
+        this.bucketWidth,
+    );
+    const b = this.buckets.get(elapsed) ?? {
+      elapsed,
+      requests: 0,
+      latencySum: 0,
+      latencyCount: 0,
+      failures: 0,
+      failureCount: 0,
+    };
+    switch (r.metric) {
+      case "http_reqs":
+        this.requests += value;
+        b.requests += value;
+        break;
+      case "http_req_duration":
+        this.latencySum += value;
+        this.latencyCount++;
+        b.latencySum += value;
+        b.latencyCount++;
+        break;
+      case "http_req_failed":
+        this.failures += value;
+        this.failureCount++;
+        b.failures += value;
+        b.failureCount++;
+        break;
+      case "vus":
+        this.vus = value;
+        b.vus = value;
+        break;
+      case "checks":
+        this.checkCount++;
+        if (value) this.checksPassed++;
+        else this.checksFailed++;
+        break;
+      case "dropped_iterations":
+        this.dropped = (this.dropped ?? 0) + value;
+        break;
+      default:
+        return;
+    }
+    this.buckets.set(elapsed, b);
+    if (this.buckets.size > 600) this.compact();
+  }
+  private compact(): void {
+    this.bucketWidth *= 2;
+    const merged = new Map<number, Bucket>();
+    for (const b of this.buckets.values()) {
+      const elapsed =
+        Math.floor(b.elapsed / this.bucketWidth) * this.bucketWidth;
+      const old = merged.get(elapsed);
+      merged.set(
+        elapsed,
+        old
+          ? {
+              elapsed,
+              requests: old.requests + b.requests,
+              latencySum: old.latencySum + b.latencySum,
+              latencyCount: old.latencyCount + b.latencyCount,
+              failures: old.failures + b.failures,
+              failureCount: old.failureCount + b.failureCount,
+              vus: b.vus ?? old.vus,
+            }
+          : { ...b, elapsed },
+      );
+    }
+    this.buckets = merged;
+  }
+  snapshot(elapsedMs: number): { metrics: Metrics; series: Bucket[] } {
+    return {
+      metrics: {
+        requests: this.requests || undefined,
+        rps: this.requests
+          ? this.requests / Math.max(elapsedMs / 1000, 0.001)
+          : undefined,
+        avg: this.latencyCount
+          ? this.latencySum / this.latencyCount
+          : undefined,
+        failureRate: this.failureCount
+          ? this.failures / this.failureCount
+          : undefined,
+        vus: this.vus,
+        checksPassed: this.checkCount ? this.checksPassed : undefined,
+        checksFailed: this.checkCount ? this.checksFailed : undefined,
+        droppedIterations: this.dropped,
+      },
+      series: [...this.buckets.values()].sort((a, b) => a.elapsed - b.elapsed),
+    };
+  }
+}
+export function readSummary(value: unknown): {
+  metrics: Metrics;
+  thresholds: ThresholdResult[];
+} {
+  if (!value || typeof value !== "object")
+    throw new Error("Invalid k6 summary.");
+  const summary = value as {
+    metrics?: Record<
+      string,
+      {
+        values?: Record<string, number>;
+        thresholds?: Record<string, { ok: boolean }>;
+      }
+    >;
+  };
+  if (!summary.metrics || typeof summary.metrics !== "object")
+    throw new Error("Missing k6 summary metrics.");
+  const get = (metric: string, key: string): number | undefined => {
+    const n = summary.metrics?.[metric]?.values?.[key];
+    return typeof n === "number" && Number.isFinite(n) ? n : undefined;
+  };
+  return {
+    metrics: {
+      requests: get("http_reqs", "count"),
+      rps: get("http_reqs", "rate"),
+      avg: get("http_req_duration", "avg"),
+      p95: get("http_req_duration", "p(95)"),
+      p99: get("http_req_duration", "p(99)"),
+      failureRate: get("http_req_failed", "rate"),
+      checksPassed: get("checks", "passes"),
+      checksFailed: get("checks", "fails"),
+      vus: get("vus", "value"),
+      droppedIterations: get("dropped_iterations", "count"),
+    },
+    thresholds: Object.entries(summary.metrics).flatMap(([metric, record]) =>
+      Object.entries(record.thresholds ?? {}).map(([expression, result]) => ({
+        metric,
+        expression,
+        ok: result.ok === true,
+      })),
+    ),
+  };
+}

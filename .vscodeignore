@@ -1,0 +1,12 @@
+.vscode/**
+.github/**
+src/**
+webview/**
+test/**
+scripts/**
+node_modules/**
+docs/**
+*.config.mjs
+tsconfig.json
+package-lock.json
+.prettierignore
