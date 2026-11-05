@@ -1,6 +1,6 @@
 {
   "name": "k6-loaddeck",
-  "displayName": "LoadDeck \u2014 k6 Performance Testing",
+  "displayName": "LoadDeck — k6 Performance Testing",
   "description": "GUI-first local performance testing powered by Grafana k6.",
   "version": "0.1.0",
   "private": true,
@@ -62,7 +62,7 @@
       },
       {
         "command": "loaddeck.runFile",
-        "title": "Run Test File\u2026",
+        "title": "Run Test File…",
         "category": "LoadDeck"
       },
       {
@@ -172,7 +172,7 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.14.0",
-    "@eslint/js": "^9.39.0",
+    "@eslint/js": "^10.0.1",
     "@grpc/grpc-js": "^1.14.7",
     "@grpc/proto-loader": "^0.8.1",
     "@types/node": "^22.19.0",
@@ -180,12 +180,12 @@
     "@types/ws": "^8.18.2",
     "@vscode/vsce": "^3.7.1",
     "esbuild": "^0.25.12",
-    "eslint": "^9.39.0",
+    "eslint": "^10.14.0",
     "playwright-core": "^1.65.0",
     "prettier": "^3.6.2",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.46.0",
+    "typescript-eslint": "^8.72.1",
     "ws": "^8.22.1"
   },
   "repository": {

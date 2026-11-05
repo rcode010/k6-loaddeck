@@ -119,7 +119,7 @@ function oauth() { if (Date.now() < tokenExpiry) return oauthToken; const respon
         if (c.bodyMode === "multipart" && c.upload)
           setup += `  payload[${json(c.upload.field)}] = http.file(uploadData, ${json(c.upload.filename)}, ${json(c.upload.contentType)});\n`;
       }
-      let operation = "";
+      let operation: string;
       if (protocol === "ws")
         operation = `  const response = ws.connect(target, { headers, tags:{name:${json(s.name)}} }, socket => {\n    socket.on('open', () => socket.send(template(${json(c.protocol!.message)}, row)));\n    socket.on('message', message => { ${checks.length ? `check(message, { ${checks.join(", ")} });` : ""} });\n    socket.setTimeout(() => socket.close(), ${c.protocol!.sessionMs});\n  });\n  check(response, {'WebSocket connected': r => r && r.status === 101});\n`;
       else if (protocol === "grpc")
