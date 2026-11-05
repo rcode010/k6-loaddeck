@@ -131,3 +131,27 @@ test("streaming logs redact split credentials and omit oversized records", () =>
   assert.ok(lines.includes("[Oversized log record omitted]"));
   assert.ok(!lines.join("").includes("private remainder"));
 });
+
+test("observed zeros and live protocol counter totals retain their real meaning", () => {
+  const collector = new Aggregator(0);
+  collector.add({
+    type: "Metric",
+    metric: "ws_msgs_received",
+    data: { type: "counter" },
+  });
+  for (let i = 0; i < 3; i++)
+    collector.add({
+      type: "Point",
+      metric: "ws_msgs_received",
+      data: { value: 1, time: new Date(0).toISOString() },
+    });
+  collector.add({
+    type: "Point",
+    metric: "http_reqs",
+    data: { value: 0, time: new Date(0).toISOString() },
+  });
+  const result = collector.snapshot(1000);
+  assert.equal(result.protocolMetrics["ws_msgs_received.count"], 3);
+  assert.equal(result.metrics.requests, 0);
+  assert.equal(result.metrics.rps, 0);
+});

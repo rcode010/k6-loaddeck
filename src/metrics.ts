@@ -24,6 +24,9 @@ export class JsonLines {
 }
 export class Aggregator {
   private requests = 0;
+  private hasRequests = false;
+  private metricTypes = new Map<string, string>();
+  private protocolStats = new Map<string, { sum: number; count: number }>();
   private latencySum = 0;
   private latencyCount = 0;
   private failures = 0;
@@ -46,8 +49,18 @@ export class Aggregator {
     const r = record as {
       type?: string;
       metric?: string;
-      data?: { value?: number; time?: string; tags?: Record<string, string> };
+      data?: {
+        type?: string;
+        value?: number;
+        time?: string;
+        tags?: Record<string, string>;
+      };
     };
+    if (r.type === "Metric" && r.metric && r.data?.type) {
+      if (this.metricTypes.size < 1000)
+        this.metricTypes.set(r.metric, r.data.type);
+      return;
+    }
     if (
       r.type !== "Point" ||
       !r.metric ||
@@ -67,7 +80,29 @@ export class Aggregator {
       this.scopes.set(scenario, scoped);
       scoped.add(record);
     }
-    if (/^(ws_|grpc_)/.test(r.metric)) this.protocols[r.metric] = value;
+    if (/^(ws_|grpc_)/.test(r.metric)) {
+      const kind = this.metricTypes.get(r.metric);
+      if (!this.protocolStats.has(r.metric) && this.protocolStats.size >= 200)
+        return;
+      const stats = this.protocolStats.get(r.metric) ?? { sum: 0, count: 0 };
+      stats.sum += value;
+      stats.count++;
+      this.protocolStats.set(r.metric, stats);
+      const key =
+        kind === "counter"
+          ? "count"
+          : kind === "trend"
+            ? "avg"
+            : kind === "rate"
+              ? "rate"
+              : "value";
+      this.protocols[`${r.metric}.${key}`] =
+        kind === "counter"
+          ? stats.sum
+          : kind === "trend" || kind === "rate"
+            ? stats.sum / stats.count
+            : value;
+    }
     if (r.metric === "http_reqs" && r.data.tags?.proto)
       this.protocols[`negotiated.${r.data.tags.proto}`] =
         (this.protocols[`negotiated.${r.data.tags.proto}`] ?? 0) + value;
@@ -88,6 +123,7 @@ export class Aggregator {
     };
     switch (r.metric) {
       case "http_reqs":
+        this.hasRequests = true;
         this.requests += value;
         b.requests += value;
         break;
@@ -119,7 +155,7 @@ export class Aggregator {
         return;
     }
     this.buckets.set(elapsed, b);
-    if (this.buckets.size > 600) this.compact();
+    while (this.buckets.size > 600) this.compact();
   }
   private compact(): void {
     this.bucketWidth *= 2;
@@ -160,8 +196,8 @@ export class Aggregator {
       ),
       protocolMetrics: { ...this.protocols },
       metrics: {
-        requests: this.requests || undefined,
-        rps: this.requests
+        requests: this.hasRequests ? this.requests : undefined,
+        rps: this.hasRequests
           ? this.requests / Math.max(elapsedMs / 1000, 0.001)
           : undefined,
         avg: this.latencyCount

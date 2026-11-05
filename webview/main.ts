@@ -1010,6 +1010,21 @@ window.addEventListener(
     state = event.data.state;
     if (initial) {
       draft = { ...defaultTest, ...state.defaults };
+      const saved = api.getState() as
+        { draft?: Partial<QuickTest> } | undefined;
+      if (saved?.draft) {
+        const d = saved.draft;
+        if (
+          ["smoke", "load", "stress", "spike", "soak"].includes(
+            d.testKind ?? "",
+          )
+        )
+          draft.testKind = d.testKind!;
+        if (Number.isInteger(d.vus) && d.vus! >= 1 && d.vus! <= 10000)
+          draft.vus = d.vus!;
+        if (typeof d.duration === "string" && /^\d+(s|m|h)$/.test(d.duration))
+          draft.duration = d.duration;
+      }
       if (draft.testKind === "load" && draft.vus === 1) {
         draft.vus = 10;
         draft.duration = "30s";
