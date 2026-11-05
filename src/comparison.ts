@@ -62,10 +62,10 @@ export function compareRuns(
     string,
     "lower" | "higher" | "neutral",
   ][] = [
-    ["avg", "Average latency", "ms", "lower"],
+    ["avg", "Average HTTP latency", "ms", "lower"],
     ["p95", "p95 latency", "ms", "lower"],
     ["p99", "p99 latency", "ms", "lower"],
-    ["rps", "Throughput", "req/s", "higher"],
+    ["rps", "HTTP throughput", "req/s", "higher"],
     ["failureRate", "HTTP failure rate", "%", "lower"],
     ["requests", "HTTP requests", "count", "neutral"],
   ];

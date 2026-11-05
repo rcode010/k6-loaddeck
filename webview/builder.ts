@@ -313,6 +313,10 @@ export function workloadBuilder(
       });
       row.append(grid, tags);
       const help: Partial<Record<CheckRule["kind"], string>> = {
+        messageContains:
+          "Every received text message is checked. If no message arrives before the session closes, this check fails.",
+        messageRegex:
+          "Every received text message is checked. If no message arrives before the session closes, this check fails. Flags: i, m, s, u.",
         statuses: "Comma-separated HTTP status codes, such as 200, 201, 204.",
         bodyRegex:
           "Regular expression over response text. Flags: i, m, s, u. Complex patterns can consume substantial CPU.",

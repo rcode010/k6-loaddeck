@@ -162,7 +162,7 @@ export function checkExpression(rule: CheckRule, protocol: string): string {
     case "bodyNonempty":
       return `Boolean(r.body && r.body.length)`;
     case "bodyLength":
-      return `Boolean(r.body) && r.body.length >= ${Number(rule.value)}`;
+      return `typeof r.body === 'string' && r.body.length >= ${Number(rule.value)}`;
     case "headerExists":
       return `headerValue(r, ${key}) !== undefined`;
     case "headerEquals":
@@ -192,6 +192,7 @@ export function checkStatements(
   protocol: string,
   scenario: string,
   value = "response",
+  options: { missingResponse?: boolean } = {},
 ): string {
   return rules
     .filter(
@@ -200,7 +201,10 @@ export function checkStatements(
         (!rule.scenarios?.length || rule.scenarios.includes(scenario)),
     )
     .map((rule) => {
-      const check = `check(${value}, { ${JSON.stringify(rule.name)}: r => safeCheck(() => ${checkExpression(rule, protocol)}) }, ${JSON.stringify({ ...rule.tags, request: scenario })});`;
+      const predicate = options.missingResponse
+        ? "() => false"
+        : `r => safeCheck(() => ${checkExpression(rule, protocol)})`;
+      const check = `check(${value}, { ${JSON.stringify(rule.name)}: ${predicate} }, ${JSON.stringify({ ...rule.tags, request: scenario })});`;
       return rule.group
         ? `group(${JSON.stringify(rule.group)}, () => { ${check} });`
         : check;

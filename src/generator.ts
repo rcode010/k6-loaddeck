@@ -136,9 +136,12 @@ function oauth() { if (Date.now() < tokenExpiry) return oauthToken; const respon
           setup += `  payload[${json(c.upload.field)}] = http.file(uploadData, ${json(c.upload.filename)}, ${json(c.upload.contentType)});\n`;
       }
       let operation: string;
-      if (protocol === "ws")
-        operation = `  const response = ws.connect(target, { headers, tags:{name:${json(s.name)}} }, socket => {\n    socket.on('open', () => socket.send(template(${json(c.protocol!.message)}, row)));\n    socket.on('message', message => { ${messageAssertions} });\n    socket.setTimeout(() => socket.close(), ${c.protocol!.sessionMs});\n  });\n  check(response, {'WebSocket connected': r => r && r.status === 101});\n`;
-      else if (protocol === "grpc")
+      if (protocol === "ws") {
+        const absent = checkStatements(rules, protocol, s.name, "null", {
+          missingResponse: true,
+        });
+        operation = `  ${messageAssertions ? "let receivedMessages = 0;\n  " : ""}const response = ws.connect(target, { headers, tags:{name:${json(s.name)}} }, socket => {\n    socket.on('open', () => socket.send(template(${json(c.protocol!.message)}, row)));\n    ${messageAssertions ? `socket.on('message', message => { receivedMessages++; ${messageAssertions} });\n    ` : ""}socket.setTimeout(() => socket.close(), ${c.protocol!.sessionMs});\n  });\n  check(response, {'WebSocket connected': r => r && r.status === 101});\n  ${absent ? `if (receivedMessages === 0) { ${absent} }\n` : ""}`;
+      } else if (protocol === "grpc")
         operation = `  client.connect(target.replace(/^grpcs?:\\/\\//, ''), { plaintext: ${c.protocol!.plaintext} });\n  try { const response = client.invoke(${json(c.protocol!.grpcMethod)}, jsonTemplate(${c.protocol!.message}, row), { metadata:headers, tags:{name:${json(s.name)}} });\n  ${assertions || "check(response, {'gRPC status OK': r => r && r.status === grpc.StatusOK});"}\n  } finally { client.close(); }\n`;
       else
         operation = `  const response = http.request(${json(c.method)}, target, ${["form", "multipart"].includes(c.bodyMode) ? "payload" : c.body ? (c.bodyMode === "json" ? `JSON.stringify(jsonTemplate(${c.body}, row))` : `template(${json(c.body)}, row)`) : "null"}, { headers, ${auth?.mode === "digest" ? "auth:'digest'," : ""}tags:{name:${json(s.name)}}, timeout:'30s' });\n  ${assertions}\n`;
