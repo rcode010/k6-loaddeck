@@ -1,10 +1,8 @@
+import { validateIntegrations } from "./integrations";
 import {
   validateScenarios,
   validateChecks,
   compileThresholds,
-  defaultScenario,
-  scenarioOptions,
-  checkExpression,
 } from "./workload";
 import { createHash } from "node:crypto";
 import type { QuickTest } from "./model";
@@ -23,7 +21,12 @@ export function validateQuickTest(value: unknown): QuickTest {
   } catch {
     throw new Error("URL: enter a valid absolute URL.");
   }
-  if (!["http:", "https:"].includes(url.protocol) || !url.hostname)
+  if (
+    !["http:", "https:", "ws:", "wss:", "grpc:", "grpcs:"].includes(
+      url.protocol,
+    ) ||
+    !url.hostname
+  )
     throw new Error("URL: only HTTP and HTTPS are supported.");
   if (url.username || url.password)
     throw new Error(
@@ -141,6 +144,9 @@ export function validateQuickTest(value: unknown): QuickTest {
   }
   if (c.checks) validateChecks(c.checks);
   if (c.thresholdRules) compileThresholds(c.thresholdRules);
+  validateIntegrations(c);
+  if (!c.protocol && !["http:", "https:"].includes(url.protocol))
+    throw new Error("Choose the matching protocol in Advanced options.");
   return {
     ...c,
     url: url.toString(),
@@ -165,6 +171,14 @@ export function safeConfig(config: QuickTest): QuickTest | undefined {
     url.search ||
     url.hash ||
     config.body ||
+    config.dataset ||
+    (config.authentication?.mode && config.authentication.mode !== "none") ||
+    config.protocol ||
+    config.outputs?.length ||
+    config.scenarios?.some((s) => {
+      const u = new URL(s.url || config.url);
+      return Boolean(u.search || u.hash);
+    }) ||
     Object.keys(config.headers).length
   )
     return undefined;
@@ -174,44 +188,4 @@ export function safeConfig(config: QuickTest): QuickTest | undefined {
     url: safeTarget(config.url),
   };
 }
-export function generateScript(c: QuickTest): string {
-  const scenarios = (c.scenarios ?? [defaultScenario(c)]).filter(
-    (s) => s.enabled,
-  );
-  const thresholds = {
-    ...c.thresholds,
-    ...compileThresholds(c.thresholdRules ?? []),
-  };
-  const options = {
-    scenarios: Object.fromEntries(
-      scenarios.map((s, i) => [s.name, scenarioOptions(s, i)]),
-    ),
-    thresholds,
-    summaryTrendStats: ["avg", "min", "max", "med", "p(95)", "p(99)"],
-    systemTags: [
-      "status",
-      "method",
-      "name",
-      "scenario",
-      "expected_response",
-      "proto",
-    ],
-  };
-  const headers = Object.entries(c.headers)
-    .map(
-      ([key, val]) =>
-        `${JSON.stringify(key)}: ${/^\$\{[A-Z_][A-Z0-9_]*\}$/.test(val) ? `__ENV[${JSON.stringify(val.slice(2, -1))}]` : JSON.stringify(val)}`,
-    )
-    .join(", ");
-  const checks = (c.checks ?? [])
-    .filter((r) => r.enabled)
-    .map(
-      (rule) =>
-        `${JSON.stringify(rule.name)}: r => safeCheck(() => ${checkExpression(rule, "http")})`,
-    );
-  if (c.expectedStatus !== undefined)
-    checks.push(
-      `${JSON.stringify(`status is ${c.expectedStatus}`)}: r => r.status === ${c.expectedStatus}`,
-    );
-  return `import http from 'k6/http';\nimport { check, sleep } from 'k6';\n\nexport const options = ${JSON.stringify(options, null, 2)};\n\nfunction safeCheck(fn) { try { return Boolean(fn()); } catch { return false; } }\nfunction jsonPath(value, path) { return path.split('.').reduce((v, key) => v == null ? undefined : v[key], value); }\n\n${scenarios.map((s, i) => `export function scenario_${i}() {\n  const response = http.request(${JSON.stringify(c.method)}, ${JSON.stringify(s.url || c.url)}, ${c.body ? JSON.stringify(c.body) : "null"}, { headers: { ${headers} }, tags: { name: ${JSON.stringify(s.name)} }, timeout: '30s' });\n${checks.length ? `  check(response, { ${checks.join(", ")} });\n` : ""}${s.executor.includes("arrival-rate") ? "" : `  sleep(${c.sleep});\n`}}`).join("\n\n")}\n\nexport default scenario_0;\n\nexport function handleSummary(data) {\n  return __ENV.LOADDECK_SUMMARY ? { [__ENV.LOADDECK_SUMMARY]: JSON.stringify(data) } : { stdout: JSON.stringify(data, null, 2) };\n}\n`;
-}
+export { generateScript } from "./generator";

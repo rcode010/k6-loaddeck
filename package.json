@@ -155,15 +155,21 @@
     }
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
     "@eslint/js": "^9.39.0",
+    "@grpc/grpc-js": "^1.14.7",
+    "@grpc/proto-loader": "^0.8.1",
     "@types/node": "^22.19.0",
     "@types/vscode": "^1.96.0",
+    "@types/ws": "^8.18.2",
     "@vscode/vsce": "^3.7.1",
     "esbuild": "^0.25.12",
     "eslint": "^9.39.0",
+    "playwright-core": "^1.65.0",
     "prettier": "^3.6.2",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.46.0"
+    "typescript-eslint": "^8.46.0",
+    "ws": "^8.22.1"
   }
 }

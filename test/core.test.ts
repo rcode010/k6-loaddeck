@@ -52,7 +52,7 @@ test("generator serializes input without executable interpolation or comments", 
     headers: { Authorization: "${API_TOKEN}" },
     expectedStatus: 200,
   });
-  assert.ok(script.includes('__ENV["API_TOKEN"]'));
+  assert.ok(script.includes('required("API_TOKEN")'));
   assert.ok(script.includes(JSON.stringify('"; throw new Error("injected");')));
   assert.ok(script.includes("handleSummary"));
 });

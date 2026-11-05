@@ -1,3 +1,4 @@
+import { credentialVariables, parseCsv } from "./integrations";
 import { spawn, execFile, type ChildProcess } from "node:child_process";
 import { promisify } from "node:util";
 import {
@@ -68,7 +69,9 @@ export class K6Runner {
     binary: string,
     version: string,
     onUpdate: (run: Run) => void,
-    input: { config: QuickTest } | { script: string },
+    input:
+      | { config: QuickTest; environment?: Record<string, string> }
+      | { script: string },
   ): Promise<Run> {
     if (this.busy)
       throw new Error(
@@ -99,6 +102,7 @@ export class K6Runner {
       state: "starting",
       exitCode: null,
       k6Version: version,
+      protocol: config?.protocol?.kind ?? (config ? "http" : "custom"),
       metrics: {},
       series: [],
       thresholds: [],
@@ -119,20 +123,54 @@ export class K6Runner {
         await writeFile(scriptFile, generateScript(config), { mode: 0o600 });
       const environment: NodeJS.ProcessEnv = {
         ...process.env,
+        ...("environment" in input ? input.environment : {}),
         K6_NO_USAGE_REPORT: "true",
         NO_COLOR: "1",
       };
       if (config) environment.LOADDECK_SUMMARY = summaryFile;
       const secrets = config
-        ? Object.values(config.headers)
-            .flatMap((value) =>
-              /^\$\{[A-Z_][A-Z0-9_]*\}$/.test(value)
-                ? [process.env[value.slice(2, -1)] ?? ""]
-                : [],
-            )
+        ? credentialVariables(config)
+            .map((name) => environment[name] ?? "")
             .concat(config.body ? [config.body] : [])
         : [];
-      const args = ["run", "--out", `json=${metricsFile}`, scriptFile];
+      if (config) {
+        for (const name of credentialVariables(config))
+          if (!environment[name])
+            throw new Error(`Missing credential variable: ${name}`);
+        if (config.dataset?.file) {
+          const file = await open(config.dataset.file, "r");
+          try {
+            if ((await file.stat()).size > 20 * 1024 * 1024)
+              throw new Error("Dataset exceeds the 20 MiB limit.");
+          } finally {
+            await file.close();
+          }
+          const text = await readFile(config.dataset.file, "utf8");
+          const rows =
+            config.dataset.format === "json"
+              ? JSON.parse(text)
+              : parseCsv(text);
+          if (
+            !Array.isArray(rows) ||
+            !rows.length ||
+            rows.some(
+              (row) => !row || typeof row !== "object" || Array.isArray(row),
+            )
+          )
+            throw new Error(
+              "Dataset must contain a nonempty array of row objects.",
+            );
+        }
+      }
+      const args = ["run", "--out", `json=${metricsFile}`];
+      for (const output of config?.outputs ?? []) {
+        if (!path.isAbsolute(output.path))
+          throw new Error("Output paths must be absolute.");
+        const file = await open(output.path, "wx", 0o600);
+        await file.close();
+        args.push("--out", `${output.format}=${output.path}`);
+      }
+      args.push(scriptFile);
       const collector = new Aggregator(started);
       const parser = new JsonLines();
       const decoder = new StringDecoder("utf8");
@@ -226,6 +264,38 @@ export class K6Runner {
             ),
           };
           run.thresholds = summary.thresholds;
+          const summaryRecord = JSON.parse(
+            await readFile(summaryFile, "utf8"),
+          ) as {
+            root_group?: {
+              checks?: { name: string; passes: number; fails: number }[];
+              groups?: unknown[];
+            };
+          };
+          const checks: NonNullable<Run["checkResults"]> = [];
+          const collectChecks = (group: unknown) => {
+            if (!group || typeof group !== "object") return;
+            const value = group as {
+              checks?: NonNullable<Run["checkResults"]>;
+              groups?: unknown[];
+            };
+            checks.push(...(value.checks ?? []));
+            for (const child of value.groups ?? []) collectChecks(child);
+          };
+          collectChecks(summaryRecord.root_group);
+          run.checkResults = checks;
+          const raw = JSON.parse(await readFile(summaryFile, "utf8")) as {
+            metrics: Record<string, { values: Record<string, number> }>;
+          };
+          run.protocolMetrics = Object.fromEntries(
+            Object.entries(raw.metrics)
+              .filter(([name]) => /^(ws_|grpc_)/.test(name))
+              .flatMap(([name, metric]) =>
+                Object.entries(metric.values)
+                  .filter(([, value]) => Number.isFinite(value))
+                  .map(([key, value]) => [`${name}.${key}`, value]),
+              ),
+          );
           run.summarySource = "k6-summary";
         } catch {
           log(

@@ -311,7 +311,7 @@ export function checkExpression(rule: CheckRule, protocol: string): string {
     case "status":
       return `r.status === ${Number(rule.value)}`;
     case "grpcStatus":
-      return `r.status === ${Number(rule.value)}`;
+      return `Number(r.status) === ${Number(rule.value)}`;
     case "duration":
       return `r.timings.duration < ${Number(rule.value)}`;
     case "bodyContains":

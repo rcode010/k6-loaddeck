@@ -35,13 +35,18 @@ export class Aggregator {
   private dropped?: number;
   private buckets = new Map<number, Bucket>();
   private bucketWidth = 1;
-  constructor(private startedAt: number) {}
+  private scopes = new Map<string, Aggregator>();
+  private protocols: Record<string, number> = {};
+  constructor(
+    private startedAt: number,
+    private scoped = false,
+  ) {}
   add(record: unknown): void {
     if (!record || typeof record !== "object") return;
     const r = record as {
       type?: string;
       metric?: string;
-      data?: { value?: number; time?: string };
+      data?: { value?: number; time?: string; tags?: Record<string, string> };
     };
     if (
       r.type !== "Point" ||
@@ -51,6 +56,21 @@ export class Aggregator {
     )
       return;
     const value = r.data.value!;
+    const scenario = r.data.tags?.scenario;
+    if (
+      !this.scoped &&
+      scenario &&
+      (this.scopes.has(scenario) || this.scopes.size < 20)
+    ) {
+      const scoped =
+        this.scopes.get(scenario) ?? new Aggregator(this.startedAt, true);
+      this.scopes.set(scenario, scoped);
+      scoped.add(record);
+    }
+    if (/^(ws_|grpc_)/.test(r.metric)) this.protocols[r.metric] = value;
+    if (r.metric === "http_reqs" && r.data.tags?.proto)
+      this.protocols[`negotiated.${r.data.tags.proto}`] =
+        (this.protocols[`negotiated.${r.data.tags.proto}`] ?? 0) + value;
     const timestamp = Date.parse(r.data.time ?? "");
     if (!Number.isFinite(timestamp)) return;
     const elapsed = Math.max(
@@ -125,8 +145,20 @@ export class Aggregator {
     }
     this.buckets = merged;
   }
-  snapshot(elapsedMs: number): { metrics: Metrics; series: Bucket[] } {
+  snapshot(elapsedMs: number): {
+    metrics: Metrics;
+    series: Bucket[];
+    scenarioMetrics: Record<string, Metrics>;
+    protocolMetrics: Record<string, number>;
+  } {
     return {
+      scenarioMetrics: Object.fromEntries(
+        [...this.scopes].map(([name, collector]) => [
+          name,
+          collector.snapshot(elapsedMs).metrics,
+        ]),
+      ),
+      protocolMetrics: { ...this.protocols },
       metrics: {
         requests: this.requests || undefined,
         rps: this.requests

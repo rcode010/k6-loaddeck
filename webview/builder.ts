@@ -66,6 +66,11 @@ function section(title: string, description: string): HTMLDetailsElement {
 export function workloadBuilder(config: QuickTest): HTMLElement {
   const root = node("div");
   function render(): void {
+    const opened = new Set(
+      [...root.querySelectorAll("details[open]")].map(
+        (d) => d.querySelector("summary")?.textContent,
+      ),
+    );
     root.replaceChildren();
     const scenarios = section(
       "Scenarios & executors",
@@ -249,16 +254,20 @@ export function workloadBuilder(config: QuickTest): HTMLElement {
             rule.kind = v as CheckRule["kind"];
             render();
           },
-          [
-            "status",
-            "duration",
-            "bodyContains",
-            "bodyNonempty",
-            "jsonEquals",
-            "headerEquals",
-            "headerExists",
-            "bodyLength",
-          ],
+          config.protocol?.kind === "ws"
+            ? ["messageContains"]
+            : config.protocol?.kind === "grpc"
+              ? ["grpcStatus", "jsonEquals"]
+              : [
+                  "status",
+                  "duration",
+                  "bodyContains",
+                  "bodyNonempty",
+                  "jsonEquals",
+                  "headerEquals",
+                  "headerExists",
+                  "bodyLength",
+                ],
         ),
         control("Expected value", rule.value, (v) => (rule.value = v)),
         control("Header or JSON path", rule.path, (v) => (rule.path = v)),
@@ -275,8 +284,18 @@ export function workloadBuilder(config: QuickTest): HTMLElement {
         config.checks ??= [];
         config.checks.push({
           name: `check_${rules.length + 1}`,
-          kind: "status",
-          value: "200",
+          kind:
+            config.protocol?.kind === "ws"
+              ? "messageContains"
+              : config.protocol?.kind === "grpc"
+                ? "grpcStatus"
+                : "status",
+          value:
+            config.protocol?.kind === "grpc"
+              ? "0"
+              : config.protocol?.kind === "ws"
+                ? "hello"
+                : "200",
           path: "",
           enabled: true,
         });
@@ -391,7 +410,10 @@ export function workloadBuilder(config: QuickTest): HTMLElement {
       }),
     );
     root.append(thresholds);
+    for (const d of root.querySelectorAll("details"))
+      if (opened.has(d.querySelector("summary")?.textContent)) d.open = true;
   }
   render();
+  root.addEventListener("refreshBuilder", render);
   return root;
 }

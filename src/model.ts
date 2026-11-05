@@ -1,3 +1,9 @@
+import type {
+  ProtocolConfig,
+  Authentication,
+  Dataset,
+  FileOutput,
+} from "./integrations";
 import type { Scenario, CheckRule, ThresholdRule } from "./workload";
 export type TestKind =
   "smoke" | "load" | "stress" | "spike" | "soak" | "custom";
@@ -10,6 +16,10 @@ export type RunState =
   | "execution_failed"
   | "cancelled";
 export interface QuickTest {
+  protocol?: ProtocolConfig;
+  authentication?: Authentication;
+  dataset?: Dataset;
+  outputs?: FileOutput[];
   scenarios?: Scenario[];
   checks?: CheckRule[];
   thresholdRules?: ThresholdRule[];
@@ -69,8 +79,12 @@ export interface Run {
   state: RunState;
   exitCode: number | null;
   k6Version: string;
+  protocol?: string;
+  scenarioMetrics?: Record<string, Metrics>;
+  protocolMetrics?: Record<string, number>;
   metrics: Metrics;
   series: Bucket[];
+  checkResults?: { name: string; passes: number; fails: number }[];
   thresholds: ThresholdResult[];
   summarySource: "k6-summary" | "observed";
   logs: string[];
@@ -94,7 +108,17 @@ export type ClientMessage =
   | { type: "ready" | "check" | "stop" | "runFile" | "logs" | "clear" }
   | { type: "navigate"; screen: Screen }
   | { type: "run" | "save" | "preview"; config: QuickTest }
-  | { type: "open" | "rerun" | "delete" | "export"; id: string };
+  | {
+      type: "open" | "rerun" | "delete" | "export";
+      id: string;
+      format?: "json" | "csv" | "html";
+    }
+  | { type: "credential"; name: string }
+  | {
+      type: "chooseFile";
+      purpose: "dataset" | "proto" | "jsonOutput" | "csvOutput";
+      format?: "json" | "csv";
+    };
 export const defaultTest: QuickTest = {
   name: "",
   url: "",

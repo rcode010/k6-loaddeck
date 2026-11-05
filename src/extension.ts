@@ -1,3 +1,6 @@
+import { credentialVariables, parseCsv } from "./integrations";
+import { exportRun } from "./reports";
+import { readFile, stat } from "node:fs/promises";
 import * as vscode from "vscode";
 import path from "node:path";
 import { randomBytes } from "node:crypto";
@@ -119,33 +122,70 @@ export function activate(context: vscode.ExtensionContext): void {
     if (!vscode.workspace.isTrusted)
       throw new Error("Trust this workspace before executing tests.");
     if (config) {
-      const target = new URL(config.url);
-      const local = ["localhost", "127.0.0.1", "[::1]"].includes(
-        target.hostname,
-      );
-      const acknowledged = context.globalState.get<string[]>(
-        "authorizedHosts",
-        [],
-      );
-      if (
-        !local &&
-        settings().get("confirmExternalTargets", true) &&
-        !acknowledged.includes(target.origin)
-      ) {
-        const response = await vscode.window.showWarningMessage(
-          `Run performance tests against ${target.origin}? Confirm you are authorized to test this service and accept its load impact.`,
-          { modal: true },
-          "Authorize target",
+      const targets = [
+        config.url,
+        ...(config.scenarios ?? []).filter((s) => s.enabled).map((s) => s.url),
+      ].filter(Boolean);
+      if (config.authentication?.mode === "oauth2")
+        targets.push(config.authentication.tokenUrl);
+      for (const value of [...new Set(targets)]) {
+        const target = new URL(value);
+        const local = ["localhost", "127.0.0.1", "[::1]"].includes(
+          target.hostname,
         );
-        if (response !== "Authorize target") return false;
-        await context.globalState.update("authorizedHosts", [
-          ...acknowledged,
-          target.origin,
-        ]);
+        const acknowledged = context.globalState.get<string[]>(
+          "authorizedHosts",
+          [],
+        );
+        if (
+          !local &&
+          settings().get("confirmExternalTargets", true) &&
+          !acknowledged.includes(target.origin)
+        ) {
+          const response = await vscode.window.showWarningMessage(
+            `Run performance tests against ${target.origin}? Confirm you are authorized to test this service and accept its load impact.`,
+            { modal: true },
+            "Authorize target",
+          );
+          if (response !== "Authorize target") return false;
+          await context.globalState.update("authorizedHosts", [
+            ...acknowledged,
+            target.origin,
+          ]);
+        }
+      }
+      if (config.authentication && config.authentication.mode !== "none") {
+        if (
+          (await vscode.window.showWarningMessage(
+            "Credentials will be sent to the selected targets and OAuth endpoint, where configured. Confirm these services are authorized. Plain HTTP and WS do not encrypt credentials.",
+            { modal: true },
+            "Send credentials",
+          )) !== "Send credentials"
+        )
+          return false;
       }
       if (
+        config.outputs?.length &&
+        (await vscode.window.showWarningMessage(
+          "Raw k6 outputs may contain sensitive metric tags and consume substantial disk space. These files are retained at your selected paths.",
+          { modal: true },
+          "Write raw outputs",
+        )) !== "Write raw outputs"
+      )
+        return false;
+      const highScenario = (config.scenarios ?? []).some(
+        (s) =>
+          Math.max(
+            s.vus ?? 0,
+            s.maxVUs ?? 0,
+            s.preAllocatedVUs ?? 0,
+            ...(s.stages ?? []).map((stage) => stage.target),
+          ) > 50 || durationSeconds(s.duration ?? s.maxDuration ?? "0s") > 300,
+      );
+      if (
         settings().get("confirmHighLoad", true) &&
-        (config.vus > 50 ||
+        (highScenario ||
+          config.vus > 50 ||
           durationSeconds(config.duration) > 300 ||
           ["stress", "spike", "soak"].includes(config.testKind))
       ) {
@@ -179,6 +219,12 @@ export function activate(context: vscode.ExtensionContext): void {
       if (!(await authorized(config))) return;
       await check();
       if (!state.installation.ready) throw new Error(state.installation.error);
+      const environment: Record<string, string> = {};
+      if (config)
+        for (const name of credentialVariables(config)) {
+          const value = await context.secrets.get(`variable:${name}`);
+          if (value) environment[name] = value;
+        }
       await open("run");
       let persisted = false;
       const result = await runner.run(
@@ -193,7 +239,7 @@ export function activate(context: vscode.ExtensionContext): void {
             void history.save({ ...run }).catch(report);
           }
         },
-        config ? { config } : input,
+        config ? { config, environment } : input,
       );
       output.appendLine(
         `${result.name} · ${result.state}\n${result.logs.join("\n")}`,
@@ -259,6 +305,66 @@ export function activate(context: vscode.ExtensionContext): void {
     )
       throw new Error("Invalid dashboard message.");
     const message = raw as ClientMessage;
+    if (message.type === "credential") {
+      if (!/^[A-Z_][A-Z0-9_]*$/.test(message.name))
+        throw new Error("Use an uppercase runtime variable name.");
+      const secret = await vscode.window.showInputBox({
+        prompt: `Protected value for ${message.name}`,
+        password: true,
+        ignoreFocusOut: true,
+      });
+      if (secret !== undefined)
+        await context.secrets.store(`variable:${message.name}`, secret);
+      return;
+    }
+    if (message.type === "chooseFile") {
+      if (
+        !["dataset", "proto", "jsonOutput", "csvOutput"].includes(
+          message.purpose,
+        )
+      )
+        throw new Error("Invalid file selection.");
+      const isOutput = message.purpose.endsWith("Output");
+      const extension =
+        message.purpose === "proto"
+          ? "proto"
+          : message.purpose === "csvOutput"
+            ? "csv"
+            : (message.format ?? "json");
+      const uri = isOutput
+        ? await vscode.window.showSaveDialog({
+            filters: { [extension]: [extension] },
+          })
+        : (
+            await vscode.window.showOpenDialog({
+              canSelectMany: false,
+              filters: { [extension]: [extension] },
+            })
+          )?.[0];
+      if (uri) {
+        let columns: string[] = [];
+        let rowCount = 0;
+        if (message.purpose === "dataset") {
+          if ((await stat(uri.fsPath)).size > 20 * 1024 * 1024)
+            throw new Error("Dataset exceeds the 20 MiB limit.");
+          const text = await readFile(uri.fsPath, "utf8");
+          const rows = extension === "csv" ? parseCsv(text) : JSON.parse(text);
+          if (!Array.isArray(rows) || !rows.length)
+            throw new Error("Choose a nonempty dataset.");
+          columns = Object.keys(rows[0]);
+          rowCount = rows.length;
+        }
+        await panel?.webview.postMessage({
+          type: "fileChosen",
+          purpose: message.purpose,
+          path: uri.fsPath,
+          format: extension,
+          columns,
+          rowCount,
+        });
+      }
+      return;
+    }
     state.error = undefined;
     if (message.type === "ready") {
       await refresh();
@@ -337,32 +443,19 @@ export function activate(context: vscode.ExtensionContext): void {
         await refresh();
       }
     } else if (message.type === "export") {
+      const format = message.format ?? "json";
+      if (!["json", "csv", "html"].includes(format))
+        throw new Error("Invalid export format.");
       const uri = await vscode.window.showSaveDialog({
         defaultUri: vscode.Uri.file(
-          path.join(requireHome(), `loaddeck-${run.id}.json`),
+          path.join(requireHome(), `loaddeck-${run.id}.${format}`),
         ),
-        filters: { JSON: ["json"] },
+        filters: { [format]: [format] },
       });
       if (uri)
         await vscode.workspace.fs.writeFile(
           uri,
-          Buffer.from(
-            JSON.stringify(
-              {
-                format: "loaddeck-result-v1",
-                units: {
-                  avg: "ms",
-                  p95: "ms",
-                  p99: "ms",
-                  failureRate: "ratio",
-                  rps: "requests/second",
-                },
-                run: { ...run, logs: [] },
-              },
-              null,
-              2,
-            ),
-          ),
+          Buffer.from(exportRun(run, format)),
         );
     }
   };

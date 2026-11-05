@@ -1,3 +1,4 @@
+import { integrationBuilder } from "./integrations";
 import { workloadBuilder } from "./builder";
 import { compareRuns } from "../src/comparison";
 import {
@@ -125,12 +126,20 @@ function navigation(): HTMLElement {
   return e;
 }
 function remember(): void {
-  api.setState({ draft: { ...draft, url: "", body: "", headers: {} } });
+  api.setState({
+    draft: {
+      ...defaultTest,
+      testKind: draft.testKind,
+      vus: draft.vus,
+      duration: draft.duration,
+    },
+  });
 }
 function configForm(): HTMLElement {
   const form = element("form", undefined, "test-form");
   const url = input(draft.url, "url");
   url.required = true;
+  url.type = "text";
   url.placeholder = "https://localhost:3000/api/health";
   url.autocomplete = "off";
   const method = select(
@@ -226,7 +235,10 @@ function configForm(): HTMLElement {
     ),
   );
   const builder = workloadBuilder(draft);
-  advanced.append(builder);
+  advanced.append(builder, integrationBuilder(draft, post));
+  advanced.addEventListener("protocolChanged", () =>
+    builder.dispatchEvent(new Event("refreshBuilder")),
+  );
   const error = element("p", undefined, "error");
   error.setAttribute("role", "alert");
   const read = (): QuickTest => {
@@ -340,6 +352,21 @@ const metricDefinitions: [keyof Metrics, string, string][] = [
   ["vus", "Active VUs", "users"],
 ];
 function metrics(run: Run): HTMLElement {
+  if (run.protocol === "ws" || run.protocol === "grpc") {
+    const grid = element("div", undefined, "metrics");
+    for (const [key, value] of Object.entries(run.protocolMetrics ?? {})) {
+      const card = element("div", undefined, "metric");
+      card.append(element("span", key), element("strong", format(value)));
+      grid.append(card);
+    }
+    if (!grid.children.length)
+      grid.append(
+        notice(
+          "No protocol measurements available yet. HTTP metrics are not available for this protocol.",
+        ),
+      );
+    return grid;
+  }
   const grid = element("div", undefined, "metrics");
   for (const [key, label, unit] of metricDefinitions) {
     const card = element("div", undefined, "metric");
@@ -471,6 +498,40 @@ function dashboard(): HTMLElement {
   if (state!.active)
     strip.append(button("Stop Test", () => post({ type: "stop" }), "danger"));
   main.append(strip, metrics(run));
+  if (run.scenarioMetrics && Object.keys(run.scenarioMetrics).length) {
+    const filter = select(
+      [
+        ["", "All scenarios"],
+        ...Object.keys(run.scenarioMetrics).map(
+          (name) => [name, name] as [string, string],
+        ),
+      ],
+      "",
+    );
+    filter.setAttribute("aria-label", "Scenario metrics");
+    const scoped = element("div");
+    filter.addEventListener("change", () => {
+      scoped.replaceChildren();
+      if (filter.value)
+        scoped.append(
+          metrics({
+            ...run,
+            metrics: run.scenarioMetrics![filter.value]!,
+            protocol: "http",
+          }),
+          notice(
+            "Scenario values are observed aggregates; VU counts and final percentiles may be unavailable at this scope.",
+          ),
+        );
+    });
+    main.append(field("Scenario", filter), scoped);
+  }
+  if (run.metrics.droppedIterations !== undefined)
+    main.append(
+      notice(
+        `Dropped iterations: ${format(run.metrics.droppedIterations, 0)}. Nonzero values mean the requested iteration schedule was not fully achieved.`,
+      ),
+    );
   const charts = element("div", undefined, "charts");
   charts.append(
     chart(run, "requests", "Throughput · req/s"),
@@ -518,6 +579,12 @@ function dashboard(): HTMLElement {
         post({ type: "navigate", screen: "home" });
       }),
       button("Export JSON", () => post({ type: "export", id: run.id })),
+      button("Export CSV", () =>
+        post({ type: "export", id: run.id, format: "csv" }),
+      ),
+      button("HTML report", () =>
+        post({ type: "export", id: run.id, format: "html" }),
+      ),
       button("Compare", () => {
         baseline = run.id;
         post({ type: "navigate", screen: "compare" });
@@ -855,3 +922,28 @@ window.addEventListener(
   },
 );
 post({ type: "ready" });
+
+window.addEventListener("message", (event: MessageEvent) => {
+  const data = event.data;
+  if (data.type !== "fileChosen") return;
+  if (data.purpose === "proto" && draft.protocol)
+    draft.protocol.protoFile = data.path;
+  else if (data.purpose === "dataset" && draft.dataset) {
+    draft.dataset.file = data.path;
+    draft.dataset.format = data.format;
+  } else if (data.purpose === "jsonOutput" || data.purpose === "csvOutput") {
+    draft.outputs ??= [];
+    draft.outputs.push({
+      format: data.purpose === "jsonOutput" ? "json" : "csv",
+      path: data.path,
+    });
+  }
+  render();
+  for (const detail of root.querySelectorAll("details")) detail.open = true;
+  if (data.purpose === "dataset") {
+    const n = notice(
+      `Dataset: ${data.rowCount} rows · columns: ${data.columns.join(", ")}. Row values are not stored in history.`,
+    );
+    root.querySelector("main")?.prepend(n);
+  }
+});
