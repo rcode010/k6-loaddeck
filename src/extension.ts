@@ -183,15 +183,32 @@ export function activate(context: vscode.ExtensionContext): void {
         )
           return false;
       }
-      const highScenario = (config.scenarios ?? []).some(
-        (s) =>
-          Math.max(
-            s.vus ?? 0,
-            s.maxVUs ?? 0,
-            s.preAllocatedVUs ?? 0,
-            ...(s.stages ?? []).map((stage) => stage.target),
-          ) > 50 || durationSeconds(s.duration ?? s.maxDuration ?? "0s") > 300,
+      const enabledScenarios = (config.scenarios ?? []).filter(
+        (s) => s.enabled,
       );
+      const scenarioPeak = (s: NonNullable<QuickTest["scenarios"]>[number]) =>
+        Math.max(
+          s.vus ?? 0,
+          s.maxVUs ?? 0,
+          s.preAllocatedVUs ?? 0,
+          s.startVUs ?? 0,
+          ...(s.stages ?? []).map((stage) => stage.target),
+        );
+      const highScenario =
+        enabledScenarios.reduce((total, s) => total + scenarioPeak(s), 0) >
+          50 ||
+        enabledScenarios.some(
+          (s) =>
+            durationSeconds(s.duration ?? s.maxDuration ?? "0s") > 300 ||
+            (s.stages ?? []).reduce(
+              (total, stage) => total + durationSeconds(stage.duration),
+              0,
+            ) > 300 ||
+            (s.iterations ?? 0) *
+              (s.executor === "per-vu-iterations" ? (s.vus ?? 1) : 1) >
+              10000 ||
+            (s.rate ?? s.startRate ?? 0) > 100,
+        );
       if (
         settings().get("confirmHighLoad", true) &&
         (highScenario ||
@@ -230,11 +247,17 @@ export function activate(context: vscode.ExtensionContext): void {
       await check();
       if (!state.installation.ready) throw new Error(state.installation.error);
       const environment: Record<string, string> = {};
-      if (config)
-        for (const name of credentialVariables(config)) {
-          const value = await context.secrets.get(`variable:${name}`);
-          if (value) environment[name] = value;
-        }
+      const variables = config
+        ? credentialVariables(config)
+        : settings().get<string[]>("scriptEnvironment", []);
+      for (const name of variables) {
+        if (!/^[A-Z_][A-Z0-9_]*$/.test(name))
+          throw new Error(
+            "Runtime variable names must be uppercase identifiers.",
+          );
+        const value = await context.secrets.get(`variable:${name}`);
+        if (value) environment[name] = value;
+      }
       await open("run");
       let persisted = false;
       const result = await runner.run(
@@ -249,7 +272,7 @@ export function activate(context: vscode.ExtensionContext): void {
             void history.save({ ...run }).catch(report);
           }
         },
-        config ? { config, environment } : input,
+        config ? { config, environment } : { ...input, environment },
       );
       output.appendLine(
         `${result.name} · ${result.state}\n${result.logs.join("\n")}`,
@@ -480,6 +503,17 @@ export function activate(context: vscode.ExtensionContext): void {
         Promise.resolve(action(...args)).catch(report),
       ),
     );
+  register("loaddeck.credential", async () => {
+    const name = await vscode.window.showInputBox({
+      prompt: "Runtime variable name",
+      placeHolder: "API_TOKEN",
+      validateInput: (value) =>
+        /^[A-Z_][A-Z0-9_]*$/.test(value)
+          ? undefined
+          : "Use an uppercase variable name.",
+    });
+    if (name) await handle({ type: "credential", name });
+  });
   register("loaddeck.open", () => open());
   register("loaddeck.quick", () => open());
   register("loaddeck.navigate", (screen: Screen) => open(screen));

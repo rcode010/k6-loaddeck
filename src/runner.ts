@@ -1,3 +1,4 @@
+import { LogBuffer } from "./logs";
 import { externalEnvironment, supportedExternalOutputs } from "./outputs";
 import { credentialVariables, parseCsv } from "./integrations";
 import { spawn, execFile, type ChildProcess } from "node:child_process";
@@ -52,6 +53,10 @@ export function redactLog(value: string, secrets: string[] = []): string {
     .replaceAll(String.fromCharCode(27), "")
     .replace(/https?:\/\/[^\s"'<>]+/g, (match) => safeTarget(match));
   for (const secret of secrets
+    .flatMap((value) => [
+      value,
+      ...value.split(/\r?\n/).filter((part) => part.length > 4),
+    ])
     .filter((s) => s.length > 0)
     .sort((a, b) => b.length - a.length))
     result = result.split(secret).join("[redacted]");
@@ -76,7 +81,7 @@ export class K6Runner {
     onUpdate: (run: Run) => void,
     input:
       | { config: QuickTest; environment?: Record<string, string> }
-      | { script: string },
+      | { script: string; environment?: Record<string, string> },
   ): Promise<Run> {
     if (this.busy)
       throw new Error(
@@ -206,7 +211,9 @@ export class K6Runner {
         ? credentialVariables(config)
             .map((name) => environment[name] ?? "")
             .concat(config.body ? [config.body] : [])
-        : [];
+        : Object.values(
+            "environment" in input ? (input.environment ?? {}) : {},
+          );
       if (config) {
         for (const name of credentialVariables(config))
           if (!environment[name])
@@ -333,8 +340,10 @@ export class K6Runner {
       run.state = "running";
       if (this.cancelled) this.stop();
       onUpdate({ ...run });
-      child.stdout?.on("data", (chunk: Buffer) => log(chunk.toString()));
-      child.stderr?.on("data", (chunk: Buffer) => log(chunk.toString()));
+      const stdoutLogs = new LogBuffer(log),
+        stderrLogs = new LogBuffer(log);
+      child.stdout?.on("data", (chunk: Buffer) => stdoutLogs.write(chunk));
+      child.stderr?.on("data", (chunk: Buffer) => stderrLogs.write(chunk));
       const timer = setInterval(() => void poll(), 1000);
       const result = await new Promise<{ code: number | null; error?: Error }>(
         (resolve) => {
@@ -343,6 +352,8 @@ export class K6Runner {
         },
       );
       clearInterval(timer);
+      stdoutLogs.end();
+      stderrLogs.end();
       while (reading) await new Promise((resolve) => setTimeout(resolve, 10));
       await poll();
       while (true) {

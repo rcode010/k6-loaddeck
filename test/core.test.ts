@@ -1,3 +1,4 @@
+import { LogBuffer } from "../src/logs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { defaultTest } from "../src/model";
@@ -110,4 +111,23 @@ test("logs redact environment secrets and URL queries", () => {
   ]);
   assert.ok(!output.includes("abc123"));
   assert.ok(!output.includes("?token"));
+});
+
+test("streaming logs redact split credentials and omit oversized records", () => {
+  const lines: string[] = [];
+  const logs = new LogBuffer((line) =>
+    lines.push(redactLog(line, ["secret-token"])),
+  );
+  logs.write(Buffer.from("Bearer secret-"));
+  assert.equal(lines.length, 0);
+  logs.write(Buffer.from("token\nnext\n"));
+  logs.end();
+  assert.ok(!lines.join("").includes("secret-token"));
+  assert.ok(lines[0]?.includes("[redacted]"));
+  const oversized = new LogBuffer((line) => lines.push(line));
+  oversized.write(Buffer.alloc(70000, 120));
+  oversized.write(Buffer.from("private remainder\n"));
+  oversized.end();
+  assert.ok(lines.includes("[Oversized log record omitted]"));
+  assert.ok(!lines.join("").includes("private remainder"));
 });

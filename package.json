@@ -84,6 +84,11 @@
         "command": "loaddeck.check",
         "title": "Check Installation",
         "category": "LoadDeck"
+      },
+      {
+        "command": "loaddeck.credential",
+        "title": "Store Runtime Credential",
+        "category": "LoadDeck"
       }
     ],
     "viewsContainers": {
@@ -152,6 +157,15 @@
         "loaddeck.confirmHighLoad": {
           "type": "boolean",
           "default": true
+        },
+        "loaddeck.scriptEnvironment": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Z_][A-Z0-9_]*$"
+          },
+          "default": [],
+          "description": "Runtime variable names to inject into existing scripts from SecretStorage or the extension host environment. Never store secret values here."
         }
       }
     }
