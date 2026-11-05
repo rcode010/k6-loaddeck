@@ -444,6 +444,7 @@ export class K6Runner {
       run.logs.push(redactLog((error as Error).message));
     } finally {
       if (this.forceTimer) clearTimeout(this.forceTimer);
+      this.forceTimer = undefined;
       this.child = undefined;
       run.endedAt = new Date().toISOString();
       run.elapsedMs = Date.now() - started;
@@ -457,7 +458,7 @@ export class K6Runner {
     return run;
   }
   stop(): void {
-    if (!this.active) return;
+    if (!this.active || this.forceTimer) return;
     this.cancelled = true;
     this.active.state = "stopping";
     const child = this.child;

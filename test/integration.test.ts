@@ -87,9 +87,19 @@ test(
         () => undefined,
         { config: { ...config, duration: "20s" } },
       );
-      setTimeout(() => runner.stop(), 1200);
+      setTimeout(() => {
+        runner.stop();
+        runner.stop();
+      }, 1200);
       const stopped = await cancellation;
       assert.equal(stopped.state, "cancelled");
+      const afterCancellation = await runner.run(
+        binary!,
+        installation.version,
+        () => undefined,
+        { config: { ...config, duration: "1s" } },
+      );
+      assert.equal(afterCancellation.state, "completed");
       const store = new HistoryStore(
         directory,
         () => 2,
