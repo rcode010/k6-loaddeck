@@ -10,3 +10,9 @@ docs/**
 tsconfig.json
 package-lock.json
 .prettierignore
+
+dist/vscode-test.js
+.gitignore
+
+.node-version
+.test-artifacts/**

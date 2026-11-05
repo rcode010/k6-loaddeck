@@ -1,0 +1,82 @@
+# Readiness and verification
+
+LoadDeck is a buildable **0.1 development preview**. The P0 execution/history/comparison path and substantial GUI implementations in all eight feature families exist. **The complete specification is not yet implemented or signed off. This is not a feature-complete stable 1.0 release.**
+
+## Verified locally
+
+Environment: Linux x64, Node.js 26.13.0, desktop VS Code 1.144.1, Grafana k6 v2.3.0, installed Chromium and OpenSSL. k6 was downloaded to `/tmp` for verification; no global binary was installed.
+
+The final full suite passed **24 tests with zero failures and zero skips**, including a real thirty-second streaming run and a Chromium accessibility audit. Type checking, current ESLint and the bundle build passed in the same run. Desktop VS Code checks additionally exercised two real runs, extension-host reload, persistent History and compatible-run comparison. The desktop harness uses keyboard controls to avoid Electron nested-frame pointer-coordinate instability.
+
+Real loopback fixtures cover:
+
+- GET and POST/JSON, authoritative averages/p95/p99, checks, passing and failing thresholds, exit code 99, cancellation and live updates.
+- Thirty seconds of ongoing metric collection with bounded chart buckets.
+- History retention, a newly constructed storage service reopening results, serialized writes, interrupted-run marking and preservation of damaged files.
+- Comparison type/script eligibility, changed conditions, zero baselines, missing values and direction-aware interpretation.
+- All six built-in executors, staggered scenarios, JSON checks and scenario-filtered thresholds.
+- WebSocket echo and unary gRPC request/response assertions with protocol metrics.
+- Basic, Digest, Bearer, API-key, cookie and OAuth client-credentials flows; secrets absent from generated source and stored run objects in the tested fixtures.
+- JSON/CSV datasets, changing request values, SharedArray initialization, form encoding, multipart upload, protected URL query parameters and simultaneous native JSON/CSV outputs.
+- HTTP/2 negotiation and client-certificate authentication against a temporary local CA, with certificate verification enabled.
+- InfluxDB v1-compatible and Prometheus remote-write wire fixtures, simultaneous internal collection and a refused backend surfacing as execution failure. These are controlled wire fixtures, not a deployed InfluxDB/Prometheus installation.
+- The real bundled webview: URL submission, executor and protocol controls, matching check choices, missing binary state, History selection, Compare navigation, dark/light narrow layouts, no narrow-page overflow and an axe WCAG A/AA audit.
+- A real isolated VS Code Extension Development Host: activation, required command registration, opening the webview, History/Compare navigation and installation checking. It exited successfully. A separate keyboard-driven desktop test exercised URL submission, real results, rerun, host reload, History selection and comparison.
+
+## Commands
+
+```sh
+npm run check
+LOADDECK_TEST_LONG=1 LOADDECK_TEST_BROWSER=/usr/bin/chromium LOADDECK_TEST_K6=/tmp/k6-v2.3.0-linux-amd64/k6 npm run check
+LOADDECK_TEST_VSCODE=/usr/share/code/code npm run test:host
+LOADDECK_TEST_VSCODE=/usr/share/code/code LOADDECK_TEST_K6=/tmp/k6-v2.3.0-linux-amd64/k6 npm run test:vscode:ui
+npm run format:check
+npm run package
+```
+
+The test runner prints explicit skips when optional binary/browser/long-run variables are absent. CI is configured for Linux, macOS and Windows with k6 v2.3.0; no remote CI workflow has been executed or pushed during this implementation.
+
+## Stable release gates still open
+
+| Family         | Implemented and locally exercised                                                                                                                    | Remaining before family sign-off                                                                                                                                                                         |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Scenarios      | Named/enabled scenarios, separate exported functions, target overrides, staggered scheduling, tags, observed scenario filters                        | Per-scenario request/protocol/auth/data workflows, per-scenario nonsecret environment editor, richer schedule visualization and scenario-specific comparison selectors                                   |
+| Executors      | Six typed forms, validation, real execution, stage editing, arrival-rate sleep suppression, dropped-iteration display                                | Stress/Spike/Soak preset integration matrix, exhaustive dangerous-load estimation, preserving independent editor state per executor                                                                      |
+| Thresholds     | Typed rules, multiple rules, tag scopes, abort/delay options, authoritative final outcomes                                                           | Explicit custom metric type discovery/editor, automated early-abort timing coverage, truncated-observation metadata and unevaluable rule display                                                         |
+| Checks         | Status, duration, body text/nonempty/length, JSON path/value, headers, WebSocket message content, gRPC status/fields                                 | Allowed-status lists, regex checks, request/group tags, body-byte-size semantics and complete check/group breakdown testing                                                                              |
+| Protocols      | HTTP, negotiated HTTP/2, WebSocket exchange and unary gRPC with file/import controls                                                                 | Schema-derived gRPC service/method picker, per-protocol timeout/TLS/redirect controls, multiple WebSocket messages/receive deadlines and broader compatibility profiles                                  |
+| Authentication | Basic, Digest, Bearer, header/query API keys, cookie, OAuth client credentials and HTTP mTLS                                                         | Compatible NTLM environment and adapter; native k6 secret-source integration; gRPC/WebSocket client-certificate profiles and credential deletion/profile management                                      |
+| Data           | JSON/CSV picker, row/column preview, runtime variables, templating, four row strategies, repeat/fail policy, verified form/multipart request support | Manual schema/type overrides, guided variable insertion and redacted value previews, dataset exhaustion integration matrix, portable copied/relative dependencies and richer per-run nonsecret overrides |
+| Outputs        | Concurrent internal/native JSON/CSV, normalized JSON/CSV, self-contained HTML, opt-in version-profile external adapters, refused-backend diagnostics | Real deployed backend verification, more binary capability profiles, external secret-source support and independent-output failure metadata                                                              |
+
+Other open acceptance gates:
+
+- Additional desktop VS Code automation for Stop, failure states, Restricted Mode and SecretStorage runtime injection. URL submission, results, rerun, reload persistence, History and Compare have passed in the real host.
+- Manual screen-reader, keyboard, light/dark/high-contrast and remote-host verification. The browser harness audit does not prove accessibility in every VS Code theme.
+- macOS/Windows execution, cancellation/process-tree cleanup and packaging verification. The CI definition is not evidence of those checks passing.
+- Broader security fuzzing for payloads, unusual URL encodings, very large output and exceptional process cleanup. No-comments enforcement and split-credential log buffering have automated coverage.
+- Rich existing-script identity management, summary capability negotiation and safe rerun after script changes. Arbitrary custom scripts currently retain observed metrics without authoritative final percentiles; scripts are never rewritten.
+- Rerun/edit from sensitive historical configurations currently requires re-entry rather than retaining raw headers, bodies or URL queries. This favors privacy but does not satisfy the full saved-template workflow yet.
+- Full result tooltips, aligned paired charts on a shared scale, comparison scenario selection, more history sorting options and saved-test organization.
+- Recovery of abandoned temporary run directories after a hard extension-host crash. Normal completion, cancellation and handled failures clean up transient artifacts.
+
+## Packaging and maintainer decisions
+
+Local `vsce package` succeeds without pushing or publishing. Publisher and license have not been selected in the repository. VSCE emits `Publisher="undefined"` when the publisher is absent; the resulting VSIX is a **development packaging check**, not a Marketplace-ready artifact. Use F5 for development. The maintainer must choose a real publisher ID and license before distribution; no identity or legal terms have been invented.
+
+Source maps and all runtime assets are bundled locally. Test-host code, source, node_modules and development fixtures are excluded from the VSIX. No release, tag, remote change, push or publication has been made.
+
+## Local commit milestones
+
+- `916fd41` — validated k6 execution and metrics core; typecheck, lint, seven unit tests and bundle build passed.
+- `fff886c` — dashboard, persistent history and comparison; real GET/POST, threshold/cancellation and storage reopening passed.
+- `acc149a` — scenario/executor/assertion builders; all six real executor fixtures and staggered scenarios passed.
+- `46e319e` — protocol, protected authentication, dataset and output workflows; real protocol/auth/data fixtures passed.
+- `d423b38` — output hardening, Digest, protected URL values, form/multipart requests and concrete comparison conditions; real fixtures passed.
+- `ce6592d` — bounded streamed-log redaction and protected runtime variables for existing scripts; unit/security checks passed.
+- `610d5e0` — correct live protocol counter totals, observed zeros and safe workload draft restoration; real integration/browser checks passed.
+- `bfb3c4f` — repeated cancellation and a new run after cancellation; real lifecycle fixture passed.
+- `fe593bf` — maintained ESLint 10 toolchain; lint and type checking passed.
+- `c9ae10e` — per-host authorization keys and bounded shutdown cleanup; full 24-test verification passed.
+
+Further commits record output hardening, request expansion and verification artifacts. See local Git history for their exact subjects and hashes.

@@ -1,13 +1,23 @@
 import { build } from "esbuild";
 await Promise.all([
   build({
+    entryPoints: ["test/vscode/index.ts"],
+    outfile: "dist/vscode-test.js",
+    bundle: true,
+    platform: "node",
+    format: "cjs",
+    external: ["vscode"],
+  }),
+  build({
     entryPoints: ["src/extension.ts"],
     outfile: "dist/extension.js",
     bundle: true,
     platform: "node",
     format: "cjs",
     external: ["vscode"],
-    sourcemap: true,
+    sourcemap: "external",
+    minify: true,
+    legalComments: "none",
   }),
   build({
     entryPoints: ["webview/main.ts"],
@@ -15,6 +25,8 @@ await Promise.all([
     bundle: true,
     platform: "browser",
     format: "iife",
-    sourcemap: true,
+    sourcemap: "external",
+    minify: true,
+    legalComments: "none",
   }),
 ]);
