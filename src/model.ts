@@ -116,6 +116,8 @@ export interface Run {
   fingerprint: string;
   conditions?: Record<string, string>;
   scriptIdentity?: string;
+  scriptDigest?: string;
+  scriptReference?: string;
   templateId?: string;
   config?: QuickTest;
   rerunnable: boolean;
@@ -173,7 +175,7 @@ export type ClientMessage =
   | { type: "run" | "save" | "preview" | "saveTemplate"; config: QuickTest }
   | { type: "openTemplate" | "runTemplate" | "deleteTemplate"; id: string }
   | {
-      type: "open" | "rerun" | "delete" | "export";
+      type: "open" | "rerun" | "delete" | "export" | "openScript";
       id: string;
       format?: "json" | "csv" | "html";
     }

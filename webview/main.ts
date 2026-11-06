@@ -723,7 +723,11 @@ function dashboard(): HTMLElement {
       );
     actions.append(
       rerun,
-      button("Edit configuration", () => {
+      button(run.scriptReference ? "Open script" : "Edit configuration", () => {
+        if (run.scriptReference) {
+          post({ type: "openScript", id: run.id });
+          return;
+        }
         if (run.templateId) {
           post({ type: "openTemplate", id: run.templateId });
           return;

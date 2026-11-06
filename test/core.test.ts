@@ -80,6 +80,8 @@ test("request validation rejects unsafe input and accepts JSON POST", () => {
   for (const patch of [
     { url: "file:///etc/passwd" },
     { url: "https://user:pass@example.com" },
+    { url: "http://{{host}}/" },
+    { url: "http://${HOST}/" },
     { vus: 0 },
     { duration: "tomorrow" },
     { method: "BOGUS" },
@@ -173,6 +175,11 @@ test("logs redact environment secrets and URL queries", () => {
   ]);
   assert.ok(!output.includes("abc123"));
   assert.ok(!output.includes("?token"));
+  assert.ok(
+    !redactLog("wss://user:private@localhost/path?token=private").includes(
+      "private",
+    ),
+  );
 });
 
 test("streaming logs redact split credentials and omit oversized records", () => {

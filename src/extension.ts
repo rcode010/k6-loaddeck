@@ -23,6 +23,7 @@ import { TestTemplates, type SavedTest } from "./templates";
 import { fingerprint } from "./definition";
 import { inspectScenarios, supportsScenarioSelection } from "./scripts";
 import { recoverTemporaryRuns } from "./temporary";
+import { ScriptReferences } from "./script-reference";
 
 class Navigation implements vscode.TreeDataProvider<vscode.TreeItem> {
   getTreeItem(item: vscode.TreeItem): vscode.TreeItem {
@@ -72,6 +73,15 @@ export function activate(context: vscode.ExtensionContext): void {
   const settings = () => vscode.workspace.getConfiguration("loaddeck");
   const templateScope = fingerprint(context.storageUri?.toString() ?? "global");
   const templateIndex = `savedTests:${templateScope}`;
+  const referenceIndex = `scriptReferences:${templateScope}`;
+  const scriptReferences = new ScriptReferences(
+    context.secrets,
+    templateScope,
+    {
+      get: () => context.globalState.get<string[]>(referenceIndex, []),
+      set: (ids) => context.globalState.update(referenceIndex, ids),
+    },
+  );
   const templates = new TestTemplates(
     context.secrets,
     {
@@ -317,14 +327,40 @@ export function activate(context: vscode.ExtensionContext): void {
         },
         config ? { config, environment } : { ...input, scenarios, environment },
       );
+      state.active = undefined;
+      state.selected = result;
       if ("templateId" in input && input.templateId) {
         result.templateId = input.templateId;
         result.rerunnable = true;
+      }
+      if ("script" in input && result.scriptDigest) {
+        try {
+          await scriptReferences.save(
+            result.id,
+            input.script,
+            result.scriptDigest,
+          );
+          result.scriptReference = result.id;
+          result.rerunnable = true;
+        } catch {
+          state.error =
+            "The run finished, but its protected script reference could not be saved. Select the original script to rerun.";
+        }
       }
       output.appendLine(
         `${result.name} · ${result.state}\n${result.logs.join("\n")}`,
       );
       await history.save(result);
+      await scriptReferences
+        .retain(
+          (await history.list()).flatMap((run) =>
+            run.scriptReference ? [run.scriptReference] : [],
+          ),
+        )
+        .catch(() => {
+          state.error =
+            "The run was saved, but old protected script references could not be cleaned up.";
+        });
       state.active = undefined;
       state.selected = result;
       await refresh();
@@ -598,6 +634,7 @@ export function activate(context: vscode.ExtensionContext): void {
         )) === "Clear history"
       ) {
         await history.clear();
+        await scriptReferences.retain([]);
         await refresh();
       }
       return;
@@ -611,6 +648,20 @@ export function activate(context: vscode.ExtensionContext): void {
       state.screen = "run";
       send();
     } else if (message.type === "rerun") {
+      if (run.scriptReference) {
+        const reference = await scriptReferences.load(run.scriptReference);
+        if (
+          reference.changed &&
+          (await vscode.window.showWarningMessage(
+            "The original script changed since this run. Run its current contents with its current options?",
+            { modal: true },
+            "Run current script",
+          )) !== "Run current script"
+        )
+          return;
+        await execute({ script: reference.file });
+        return;
+      }
       if (run.templateId) {
         await execute({
           config: await templates.load(run.templateId),
@@ -623,6 +674,9 @@ export function activate(context: vscode.ExtensionContext): void {
           "Re-enter sensitive request settings in Home, or select the original script.",
         );
       await execute({ config: run.config });
+    } else if (message.type === "openScript" && run.scriptReference) {
+      const reference = await scriptReferences.load(run.scriptReference);
+      await vscode.window.showTextDocument(vscode.Uri.file(reference.file));
     } else if (message.type === "delete") {
       if (
         (await vscode.window.showWarningMessage(
@@ -632,6 +686,11 @@ export function activate(context: vscode.ExtensionContext): void {
         )) === "Delete"
       ) {
         await history.delete(run.id);
+        await scriptReferences.retain(
+          (await history.list()).flatMap((result) =>
+            result.scriptReference ? [result.scriptReference] : [],
+          ),
+        );
         await refresh();
       }
     } else if (message.type === "export") {

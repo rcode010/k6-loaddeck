@@ -24,6 +24,10 @@ function validateTarget(value: unknown, protocol: string): void {
         : ["http:", "https:"];
   if (!schemes.includes(url.protocol) || !url.hostname)
     throw new Error(`URL scheme must match ${protocol}.`);
+  if (/[${}]/.test(url.hostname))
+    throw new Error(
+      "Target hostname must be explicit. Insert variables in URL paths or query values instead.",
+    );
   for (const [key, val] of url.searchParams)
     if (
       /token|secret|password|api[-_]?key|authorization/i.test(key) &&
@@ -119,8 +123,44 @@ export function validateQuickTest(
   configuredThresholds(c);
   if (c.scenarios) {
     validateScenarios(c.scenarios);
-    for (const scenario of c.scenarios)
-      validateQuickTest(scenarioConfig(c, scenario), scenario.name);
+    for (const scenario of c.scenarios) {
+      const request = scenarioConfig(c, scenario);
+      validateQuickTest(request, scenario.name);
+      const auth = request.authentication;
+      const protectedNames = [
+        auth?.secretVariable,
+        auth?.usernameVariable,
+        auth?.certificateVariable,
+        auth?.privateKeyVariable,
+      ].filter(Boolean);
+      const carriers = [
+        ...Object.entries(request.headers)
+          .filter(([key]) =>
+            /authorization|cookie|api[-_]?key|token|secret/i.test(key),
+          )
+          .map(([, value]) => value),
+        ...[...new URL(request.url).searchParams]
+          .filter(([key]) =>
+            /token|secret|password|api[-_]?key|authorization/i.test(key),
+          )
+          .map(([, value]) => value),
+      ];
+      protectedNames.push(
+        ...carriers.flatMap((value) =>
+          [...value.matchAll(/\$\{([A-Z_][A-Z0-9_]*)\}/g)].map(
+            (match) => match[1]!,
+          ),
+        ),
+      );
+      if (
+        Object.keys(scenario.env ?? {}).some((name) =>
+          protectedNames.includes(name),
+        )
+      )
+        throw new Error(
+          "Scenario environment cannot override protected credential references. Use SecretStorage or the extension host environment.",
+        );
+    }
   }
   if (c.checks) {
     validateChecks(c.checks);

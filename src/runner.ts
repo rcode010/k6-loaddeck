@@ -50,7 +50,9 @@ export async function discover(binary: string): Promise<Installation> {
 export function redactLog(value: string, secrets: string[] = []): string {
   let result = value
     .replaceAll(String.fromCharCode(27), "")
-    .replace(/https?:\/\/[^\s"'<>]+/gi, (match) => safeTarget(match));
+    .replace(/(?:https?|wss?|grpcs?):\/\/[^\s"'<>]+/gi, (match) =>
+      safeTarget(match),
+    );
   for (const secret of secrets
     .flatMap((value) => [
       value,
@@ -94,6 +96,7 @@ export class K6Runner {
       );
     const config = "config" in input ? input.config : undefined;
     const script = "script" in input ? input.script : undefined;
+    const scriptContent = script ? await readFile(script, "utf8") : undefined;
     const requests = config ? activeRequests(config) : [];
     const protocols = [
       ...new Set(requests.map((r) => r.protocol?.kind ?? "http")),
@@ -136,7 +139,7 @@ export class K6Runner {
             }
           : {
               script,
-              content: await readFile(script!, "utf8"),
+              content: scriptContent,
               scenarios: "scenarios" in input ? input.scenarios : undefined,
             },
       ),
@@ -185,6 +188,8 @@ export class K6Runner {
           ? { selectedScenarios: input.scenarios.join(", ") }
           : undefined,
       scriptIdentity: script ? fingerprint(path.resolve(script)) : undefined,
+      scriptDigest:
+        scriptContent === undefined ? undefined : fingerprint(scriptContent),
       config: config ? safeConfig(config) : undefined,
       rerunnable: config ? !!safeConfig(config) : false,
       startedAt: new Date(started).toISOString(),

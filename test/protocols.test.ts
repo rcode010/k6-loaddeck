@@ -162,6 +162,9 @@ test(
         ),
       );
       const wsComparison = compareRuns(wsRun, { ...wsRun, id: "ws-candidate" });
+      assert.ok(exportRun(wsRun, "csv").includes("ws_msgs_received.count"));
+      assert.ok(exportRun(grpcRun, "csv").includes("grpc_req_duration.avg"));
+      assert.ok(exportRun(grpcRun, "html").includes("grpc_req_duration.avg"));
       assert.ok(
         wsComparison.rows.some(
           (row) => row.key === "ws_msgs_received.count" && row.baseline! > 0,
