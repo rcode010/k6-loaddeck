@@ -240,6 +240,7 @@ export function integrationBuilder(
           "none",
           "basic",
           "digest",
+          "ntlm",
           "bearer",
           "apiKey",
           "cookie",
@@ -252,14 +253,14 @@ export function integrationBuilder(
       if (
         (p.kind === "grpc" &&
           !["none", "bearer", "apiKey", "mtls"].includes(option.value)) ||
-        (p.kind === "ws" && option.value === "digest")
+        (p.kind === "ws" && ["digest", "ntlm"].includes(option.value))
       ) {
         option.disabled = true;
         option.textContent += " (unavailable for this protocol)";
       }
     }
     if (a.mode !== "none") {
-      if (["basic", "digest", "oauth2"].includes(a.mode))
+      if (["basic", "digest", "ntlm", "oauth2"].includes(a.mode))
         authentication.append(
           field(
             "Username / client ID variable",
@@ -335,7 +336,7 @@ export function integrationBuilder(
     authentication.append(
       node(
         "p",
-        "NTLM is unavailable in this preview: a compatible authentication environment has not been validated. Use an existing script for this scheme.",
+        "Digest and NTLM are HTTP authentication schemes. NTLM usernames can include a domain (DOMAIN\\user); use the protected username variable.",
       ),
     );
     root.append(authentication);

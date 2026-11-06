@@ -22,6 +22,7 @@ export interface Authentication {
     | "none"
     | "basic"
     | "digest"
+    | "ntlm"
     | "bearer"
     | "apiKey"
     | "cookie"
@@ -180,6 +181,7 @@ export function validateIntegrations(c: QuickTest): void {
       ![
         "basic",
         "digest",
+        "ntlm",
         "bearer",
         "apiKey",
         "cookie",
@@ -199,12 +201,12 @@ export function validateIntegrations(c: QuickTest): void {
     if (auth.mode === "mtls") {
       variable(auth.certificateVariable);
       variable(auth.privateKeyVariable);
-      if (new URL(c.url).protocol === "grpc:")
+      if (!["https:", "wss:", "grpcs:"].includes(new URL(c.url).protocol))
         throw new Error(
-          "Client-certificate authentication requires TLS: use grpcs://.",
+          "Client-certificate authentication requires HTTPS, WSS or GRPCS.",
         );
     } else variable(auth.secretVariable);
-    if (["basic", "digest", "oauth2"].includes(auth.mode))
+    if (["basic", "digest", "ntlm", "oauth2"].includes(auth.mode))
       variable(auth.usernameVariable);
     if (
       (auth.mode === "apiKey" || auth.mode === "cookie") &&
@@ -226,8 +228,10 @@ export function validateIntegrations(c: QuickTest): void {
       throw new Error(
         "gRPC supports Bearer, header API keys and client certificates in this builder.",
       );
-    if (p?.kind === "ws" && auth.mode === "digest")
-      throw new Error("Digest authentication is supported for HTTP only.");
+    if (p?.kind === "ws" && ["digest", "ntlm"].includes(auth.mode))
+      throw new Error(
+        "Digest and NTLM authentication are supported for HTTP only.",
+      );
     if (
       p?.kind === "grpc" &&
       auth.mode === "apiKey" &&
@@ -300,7 +304,7 @@ export function credentialVariables(c: QuickTest): string[] {
     if (a.mode === "mtls")
       list.push(a.certificateVariable, a.privateKeyVariable);
     else list.push(a.secretVariable);
-    if (["basic", "digest", "oauth2"].includes(a.mode))
+    if (["basic", "digest", "ntlm", "oauth2"].includes(a.mode))
       list.push(a.usernameVariable);
   }
   if (c.externalOutput?.enabled)

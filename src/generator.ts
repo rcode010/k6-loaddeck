@@ -130,7 +130,7 @@ function oauth(id, url, username, secret, scope, audience) { const cached = oaut
         const secret = `required(${json(auth.secretVariable)})`;
         if (auth.mode === "basic")
           setup += `  headers.Authorization = 'Basic ' + encoding.b64encode(required(${json(auth.usernameVariable)}) + ':' + ${secret});\n`;
-        if (auth.mode === "digest")
+        if (["digest", "ntlm"].includes(auth.mode))
           setup += `  target = target.replace(/^(https?:\\/\\/)/, prefix => prefix + encodeURIComponent(required(${json(auth.usernameVariable)})) + ':' + encodeURIComponent(${secret}) + '@');\n`;
         if (auth.mode === "bearer")
           setup += `  headers.Authorization = 'Bearer ' + ${secret};\n`;
@@ -168,7 +168,7 @@ function oauth(id, url, username, secret, scope, audience) { const cached = oaut
       } else if (protocol === "grpc")
         operation = `  client_${index}.connect(target.replace(/^grpcs?:\\/\\//, ''), { plaintext: ${c.protocol!.plaintext}, timeout: ${json(c.protocol!.timeout ?? "30s")}${auth?.mode === "mtls" ? `, tls: { cert: required(${json(auth.certificateVariable)}), key: required(${json(auth.privateKeyVariable)}) }` : ""} });\n  try { const response = client_${index}.invoke(${json(c.protocol!.grpcMethod)}, jsonTemplate(JSON.parse(${json(c.protocol!.message)}), row), { metadata:headers, timeout: ${json(c.protocol!.timeout ?? "30s")}, tags:{name:${json(s.name)}} });\n  ${assertions || "check(response, {'gRPC status OK': r => r && r.status === grpc.StatusOK});"}\n  } finally { client_${index}.close(); }\n`;
       else
-        operation = `  const response = http.request(${json(c.method)}, target, ${["form", "multipart"].includes(c.bodyMode) ? "payload" : c.body ? (c.bodyMode === "json" ? `JSON.stringify(jsonTemplate(JSON.parse(${json(c.body)}), row))` : `template(${json(c.body)}, row)`) : "null"}, { headers, ${auth?.mode === "digest" ? "auth:'digest'," : ""}tags:{name:${json(s.name)}}, timeout:${json(c.protocol?.timeout ?? "30s")}, redirects:${c.protocol?.redirects ?? 10} });\n  ${assertions}\n`;
+        operation = `  const response = http.request(${json(c.method)}, target, ${["form", "multipart"].includes(c.bodyMode) ? "payload" : c.body ? (c.bodyMode === "json" ? `JSON.stringify(jsonTemplate(JSON.parse(${json(c.body)}), row))` : `template(${json(c.body)}, row)`) : "null"}, { headers, ${auth && ["digest", "ntlm"].includes(auth.mode) ? `auth:${json(auth.mode)},` : ""}tags:{name:${json(s.name)}}, timeout:${json(c.protocol?.timeout ?? "30s")}, redirects:${c.protocol?.redirects ?? 10} });\n  ${assertions}\n`;
       return `export function scenario_${index}() {\n  ${setup}${operation}${s.executor.includes("arrival-rate") ? "" : `  sleep(${c.sleep});\n`}}`;
     })
     .join("\n\n");
