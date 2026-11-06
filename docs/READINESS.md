@@ -59,6 +59,6 @@ Missing optional dependencies produce explicit skips. OpenSSL fixtures skip on W
 
 - Execute the CI matrix and desktop/process-cleanup checks on macOS and Windows. A workflow definition is not a passing run.
 - Complete manual screen-reader, keyboard, theme, and remote-host verification. Automated audits do not replace assistive-technology testing.
-- Confirm ownership of the configured `rcode010` publisher ID and complete Marketplace registration before publication.
+- Confirm ownership of the configured `algorithmalbert` publisher ID and complete Marketplace registration before publication.
 
 Local packaging and verification do not publish the extension or create a release.

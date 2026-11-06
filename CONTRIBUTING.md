@@ -31,6 +31,6 @@ A pull request should explain the concrete problem, resulting behavior, relevant
 
 `npm run package` creates a local VSIX without publishing. LoadDeck is MIT licensed and marked free in Marketplace metadata.
 
-The publisher ID is `rcode010`, matching the repository maintainer. Register that ID or confirm its ownership through [Marketplace publisher management](https://marketplace.visualstudio.com/manage) before publishing. Follow the [VS Code publishing guide](https://code.visualstudio.com/api/working-with-extensions/publishing-extension) for account setup and supported authentication.
+The publisher ID is `algorithmalbert`. Confirm its ownership through [Marketplace publisher management](https://marketplace.visualstudio.com/manage) before publishing. Follow the [VS Code publishing guide](https://code.visualstudio.com/api/working-with-extensions/publishing-extension) for account setup and supported authentication.
 
 Stable 1.0 requires the checks in [Compatibility and verification](docs/READINESS.md). Publishing, tagging releases, pushing, and changing repository settings require maintainer authorization.
