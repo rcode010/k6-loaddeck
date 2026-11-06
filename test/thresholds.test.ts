@@ -65,6 +65,21 @@ test("threshold rules respect actual metric types and preserve both form sources
     ],
   );
 });
+test("p95 uses k6 request latency percentile, not cumulative duration", () => {
+  const result = readSummary({
+    metrics: {
+      http_req_duration: {
+        type: "trend",
+        contains: "time",
+        values: { avg: 40, "p(95)": 90, "p(99)": 100, count: 10 },
+      },
+    },
+  });
+  assert.equal(result.metrics.avg, 40);
+  assert.equal(result.metrics.p95, 90);
+  assert.equal(result.metrics.p99, 100);
+});
+
 test("missing threshold outcomes remain unevaluated and truncated runs suppress verdicts", () => {
   const parsed = readSummary({
     metrics: {

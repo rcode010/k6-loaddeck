@@ -22,7 +22,8 @@ test(
       !process.env.LOADDECK_TEST_K6 ||
       process.platform === "win32" ||
       (process.platform === "darwin" &&
-        process.env.LOADDECK_TEST_SYSTEM_CA !== "1"),
+        (process.env.LOADDECK_TEST_SYSTEM_CA !== "1" ||
+          process.env.RUNNER_ENVIRONMENT !== "github-hosted")),
     timeout: 30000,
   },
   async () => {
@@ -273,11 +274,6 @@ test(
     } finally {
       try {
         if (trusted) {
-          await promisify(execFile)(
-            "sudo",
-            ["-n", "security", "remove-trusted-cert", "-d", certFile],
-            { timeout: 10000 },
-          );
           await promisify(execFile)(
             "sudo",
             [
