@@ -21,7 +21,10 @@ jobs:
         with:
           k6-version: "2.3.0"
       - run: npm ci
-      - run: npm run check
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run build
+      - run: node --import tsx --test --test-reporter=./scripts/ci-reporter.mjs test/*.test.ts
         env:
           LOADDECK_TEST_K6: k6
       - run: npm run format:check
