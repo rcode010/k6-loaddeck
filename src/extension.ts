@@ -1,7 +1,7 @@
 import { credentialVariables } from "./integrations";
 import { datasetRows, datasetPreview } from "./data";
 import { exportRun } from "./reports";
-import { readFile, stat } from "node:fs/promises";
+import { readFile, stat, rm } from "node:fs/promises";
 import * as vscode from "vscode";
 import path from "node:path";
 import { randomBytes } from "node:crypto";
@@ -18,6 +18,9 @@ import { HistoryStore } from "./history";
 import { activeRequests } from "./requests";
 import { workloadLoad } from "./load";
 import { protoMethods } from "./proto";
+import { savedScript } from "./saved-script";
+import { TestTemplates, type SavedTest } from "./templates";
+import { fingerprint } from "./definition";
 
 class Navigation implements vscode.TreeDataProvider<vscode.TreeItem> {
   getTreeItem(item: vscode.TreeItem): vscode.TreeItem {
@@ -29,6 +32,7 @@ class Navigation implements vscode.TreeDataProvider<vscode.TreeItem> {
       ["Running Test", "run", "pulse"],
       ["History", "history", "history"],
       ["Compare", "compare", "diff"],
+      ["Saved Tests", "saved", "save"],
       ["Run Saved Script", "file", "file-code"],
     ].map(([label, screen, icon]) => {
       const item = new vscode.TreeItem(label!);
@@ -56,6 +60,16 @@ export function activate(context: vscode.ExtensionContext): void {
   };
   const output = vscode.window.createOutputChannel("LoadDeck");
   const settings = () => vscode.workspace.getConfiguration("loaddeck");
+  const templateScope = fingerprint(context.storageUri?.toString() ?? "global");
+  const templateIndex = `savedTests:${templateScope}`;
+  const templates = new TestTemplates(
+    context.secrets,
+    {
+      get: () => context.globalState.get<SavedTest[]>(templateIndex, []),
+      set: (tests) => context.globalState.update(templateIndex, tests),
+    },
+    templateScope,
+  );
   const history = new HistoryStore(
     (context.storageUri ?? context.globalStorageUri).fsPath,
     () => settings().get<number>("historyLimit", 50),
@@ -78,6 +92,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const send = () => panel?.webview.postMessage({ type: "state", state });
   const refresh = async () => {
     state.runs = await history.list();
+    state.templates = templates.list();
     send();
   };
   const check = async () => {
@@ -222,7 +237,9 @@ export function activate(context: vscode.ExtensionContext): void {
       return false;
     return true;
   };
-  const execute = async (input: { config: QuickTest } | { script: string }) => {
+  const execute = async (
+    input: { config: QuickTest; templateId?: string } | { script: string },
+  ) => {
     if (busy || runner.busy)
       throw new Error("A test is already running or awaiting confirmation.");
     busy = true;
@@ -261,6 +278,10 @@ export function activate(context: vscode.ExtensionContext): void {
         },
         config ? { config, environment } : { ...input, environment },
       );
+      if ("templateId" in input && input.templateId) {
+        result.templateId = input.templateId;
+        result.rerunnable = true;
+      }
       output.appendLine(
         `${result.name} · ${result.state}\n${result.logs.join("\n")}`,
       );
@@ -294,7 +315,18 @@ export function activate(context: vscode.ExtensionContext): void {
       filters: { "k6 JavaScript": ["js"] },
       saveLabel: "Save k6 Script",
     });
-    if (uri) await vscode.workspace.fs.writeFile(uri, Buffer.from(source));
+    if (uri) {
+      if (uri.scheme !== "file")
+        throw new Error("Save scripts on the extension host filesystem.");
+      const bundle = await savedScript(c, uri.fsPath);
+      try {
+        await vscode.workspace.fs.writeFile(uri, Buffer.from(bundle.source));
+      } catch (error) {
+        if (bundle.assets)
+          await rm(bundle.assets, { recursive: true, force: true });
+        throw error;
+      }
+    }
   };
   const runFile = async (uri?: vscode.Uri) => {
     if (!uri) {
@@ -434,13 +466,57 @@ export function activate(context: vscode.ExtensionContext): void {
       return;
     }
     state.error = undefined;
+    if (message.type === "saveTemplate") {
+      const config = validateQuickTest(message.config);
+      const name = await vscode.window.showInputBox({
+        prompt:
+          "Saved-test name. Request settings are protected by VS Code SecretStorage; names remain visible in the saved-test list.",
+        value: config.name || "My performance test",
+      });
+      if (name) {
+        await templates.save(name, config);
+        await refresh();
+      }
+      return;
+    }
+    if (
+      ["openTemplate", "runTemplate", "deleteTemplate"].includes(
+        message.type,
+      ) &&
+      "id" in message
+    ) {
+      if (message.type === "deleteTemplate") {
+        if (
+          (await vscode.window.showWarningMessage(
+            "Delete this saved test and its protected configuration? Run history is retained.",
+            { modal: true },
+            "Delete saved test",
+          )) === "Delete saved test"
+        ) {
+          await templates.delete(message.id);
+          await refresh();
+        }
+      } else {
+        const config = await templates.load(message.id);
+        if (message.type === "runTemplate")
+          await execute({ config, templateId: message.id });
+        else {
+          draft = config;
+          await open("home");
+          await panel?.webview.postMessage({ type: "loadConfig", config });
+        }
+      }
+      return;
+    }
     if (message.type === "ready") {
       await refresh();
       await check();
       return;
     }
     if (message.type === "navigate") {
-      if (!["home", "run", "history", "compare"].includes(message.screen))
+      if (
+        !["home", "run", "history", "compare", "saved"].includes(message.screen)
+      )
         throw new Error("Invalid destination.");
       state.screen = message.screen;
       send();
@@ -496,6 +572,13 @@ export function activate(context: vscode.ExtensionContext): void {
       state.screen = "run";
       send();
     } else if (message.type === "rerun") {
+      if (run.templateId) {
+        await execute({
+          config: await templates.load(run.templateId),
+          templateId: run.templateId,
+        });
+        return;
+      }
       if (!run.config || !run.rerunnable)
         throw new Error(
           "Re-enter sensitive request settings in Home, or select the original script.",
@@ -573,6 +656,10 @@ export function activate(context: vscode.ExtensionContext): void {
   register("loaddeck.navigate", (screen: Screen) => open(screen));
   register("loaddeck.history", () => open("history"));
   register("loaddeck.compare", () => open("compare"));
+  register("loaddeck.saved", async () => {
+    await refresh();
+    await open("saved");
+  });
   register("loaddeck.save", () => save(draft));
   register("loaddeck.stop", () => runner.stop());
   register("loaddeck.check", async () => {

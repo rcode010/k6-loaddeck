@@ -17,6 +17,8 @@ export async function run(): Promise<void> {
     "history",
     "compare",
     "check",
+    "saved",
+    "manageCredentials",
   ])
     assert.ok(commands.includes(`loaddeck.${command}`), command);
   for (const command of [
@@ -24,6 +26,7 @@ export async function run(): Promise<void> {
     "loaddeck.history",
     "loaddeck.compare",
     "loaddeck.check",
+    "loaddeck.saved",
   ])
     await vscode.commands.executeCommand(command);
   console.log(

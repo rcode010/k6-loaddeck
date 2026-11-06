@@ -94,6 +94,11 @@
         "command": "loaddeck.manageCredentials",
         "title": "Manage Runtime Credentials",
         "category": "LoadDeck"
+      },
+      {
+        "command": "loaddeck.saved",
+        "title": "View Saved Tests",
+        "category": "LoadDeck"
       }
     ],
     "viewsContainers": {

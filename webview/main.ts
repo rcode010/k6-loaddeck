@@ -113,6 +113,7 @@ function navigation(): HTMLElement {
     ["run", "Dashboard"],
     ["history", "History"],
     ["compare", "Compare"],
+    ["saved", "Saved tests"],
   ] as [Screen, string][]) {
     const b = button(
       label,
@@ -309,7 +310,7 @@ function configForm(): HTMLElement {
     remember();
     return draft;
   };
-  const perform = (type: "run" | "save" | "preview") => {
+  const perform = (type: "run" | "save" | "preview" | "saveTemplate") => {
     try {
       if (form.reportValidity()) post({ type, config: read() });
     } catch {
@@ -327,6 +328,7 @@ function configForm(): HTMLElement {
     run,
     button("Preview script", () => perform("preview")),
     button("Save as k6 Script", () => perform("save")),
+    button("Save test configuration", () => perform("saveTemplate")),
   );
   form.append(target, workload, advanced, error, actions);
   form.addEventListener("insertBinding", (event) => {
@@ -704,7 +706,16 @@ function dashboard(): HTMLElement {
     actions.append(
       rerun,
       button("Edit configuration", () => {
-        if (run.config) draft = run.config;
+        if (run.templateId) {
+          post({ type: "openTemplate", id: run.templateId });
+          return;
+        }
+        draft = run.config ?? {
+          ...defaultTest,
+          url: run.target,
+          method: run.method === "Script" ? "GET" : run.method,
+          testKind: run.testKind === "custom" ? "smoke" : run.testKind,
+        };
         post({ type: "navigate", screen: "home" });
       }),
       button("Export JSON", () => post({ type: "export", id: run.id })),
@@ -1112,6 +1123,47 @@ function comparison(): HTMLElement {
   }
   return main;
 }
+function saved(): HTMLElement {
+  const main = element("main");
+  main.append(
+    heading(
+      "Saved tests",
+      "Reuse protected configurations or edit them before running.",
+    ),
+    notice(
+      "Request settings are kept in VS Code SecretStorage. This list contains names and identifiers only. Credential values remain separate protected runtime variables.",
+    ),
+  );
+  for (const test of state!.templates ?? []) {
+    const card = element("section", undefined, "card");
+    card.append(
+      element("h2", test.name),
+      element("p", new Date(test.updatedAt).toLocaleString()),
+      button("Edit saved test", () =>
+        post({ type: "openTemplate", id: test.id }),
+      ),
+      button(
+        "Run saved test",
+        () => post({ type: "runTemplate", id: test.id }),
+        "primary",
+      ),
+      button("Delete saved test", () =>
+        post({ type: "deleteTemplate", id: test.id }),
+      ),
+    );
+    main.append(card);
+  }
+  if (!state!.templates?.length)
+    main.append(
+      notice(
+        "No saved tests yet. Configure a test and choose Save test configuration.",
+      ),
+    );
+  main.append(
+    button("New test", () => post({ type: "navigate", screen: "home" })),
+  );
+  return main;
+}
 function render(): void {
   if (!state) return;
   root.replaceChildren(navigation());
@@ -1121,7 +1173,9 @@ function render(): void {
     root.append(error);
   }
   root.append(
-    { home, run: dashboard, history, compare: comparison }[state.screen](),
+    { home, run: dashboard, history, compare: comparison, saved }[
+      state.screen
+    ](),
   );
 }
 window.addEventListener(
@@ -1169,6 +1223,12 @@ post({ type: "ready" });
 
 window.addEventListener("message", (event: MessageEvent) => {
   const data = event.data;
+  if (data.type === "loadConfig") {
+    draft = data.config;
+    render();
+    for (const detail of root.querySelectorAll("details")) detail.open = true;
+    return;
+  }
   if (!["fileChosen", "protoMethods"].includes(data.type)) return;
   const config = data.scenario
     ? draft.scenarios?.find((s) => s.name === data.scenario)?.request

@@ -387,6 +387,30 @@ test(
         path: "docs/screenshots/results-dark.png",
         fullPage: true,
       });
+      view.screen = "saved";
+      view.templates = [
+        {
+          id: "saved-fixture",
+          name: "Reusable local test",
+          updatedAt: new Date().toISOString(),
+        },
+      ];
+      await send();
+      await page
+        .getByRole("heading", { name: "Reusable local test", exact: true })
+        .waitFor();
+      await page
+        .getByRole("button", { name: "Run saved test", exact: true })
+        .click();
+      assert.equal(
+        await page.evaluate(
+          () =>
+            (window as unknown as { messages: { type: string }[] }).messages.at(
+              -1,
+            )?.type,
+        ),
+        "runTemplate",
+      );
       await page.setViewportSize({ width: 390, height: 844 });
       view.screen = "home";
       await send();

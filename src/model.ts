@@ -1,4 +1,5 @@
 import type { MetricDefinition } from "./thresholds";
+import type { SavedTest } from "./templates";
 import type { ExternalOutput } from "./outputs";
 import type {
   ProtocolConfig,
@@ -110,6 +111,7 @@ export interface Run {
   fingerprint: string;
   conditions?: Record<string, string>;
   scriptIdentity?: string;
+  templateId?: string;
   config?: QuickTest;
   rerunnable: boolean;
   startedAt: string;
@@ -148,11 +150,12 @@ export interface Installation {
   error?: string;
   externalOutputs?: string[];
 }
-export type Screen = "home" | "run" | "history" | "compare";
+export type Screen = "home" | "run" | "history" | "compare" | "saved";
 export interface ViewState {
   screen: Screen;
   installation: Installation;
   runs: Run[];
+  templates?: SavedTest[];
   active?: Run;
   selected?: Run;
   error?: string;
@@ -162,7 +165,8 @@ export type ClientMessage =
   | { type: "ready" | "check" | "runFile" | "logs" | "clear" }
   | { type: "stop"; id: string }
   | { type: "navigate"; screen: Screen }
-  | { type: "run" | "save" | "preview"; config: QuickTest }
+  | { type: "run" | "save" | "preview" | "saveTemplate"; config: QuickTest }
+  | { type: "openTemplate" | "runTemplate" | "deleteTemplate"; id: string }
   | {
       type: "open" | "rerun" | "delete" | "export";
       id: string;
