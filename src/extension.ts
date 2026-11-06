@@ -18,6 +18,7 @@ import {
 } from "./definition";
 import { discover, K6Runner } from "./runner";
 import { HistoryStore } from "./history";
+import { activeRequests } from "./requests";
 
 class Navigation implements vscode.TreeDataProvider<vscode.TreeItem> {
   getTreeItem(item: vscode.TreeItem): vscode.TreeItem {
@@ -132,12 +133,15 @@ export function activate(context: vscode.ExtensionContext): void {
     if (!vscode.workspace.isTrusted)
       throw new Error("Trust this workspace before executing tests.");
     if (config) {
-      const targets = [
-        config.url,
-        ...(config.scenarios ?? []).filter((s) => s.enabled).map((s) => s.url),
-      ].filter(Boolean);
-      if (config.authentication?.mode === "oauth2")
-        targets.push(config.authentication.tokenUrl);
+      const requests = activeRequests(config);
+      const targets = requests
+        .flatMap((r) => [
+          r.url,
+          ...(r.authentication?.mode === "oauth2"
+            ? [r.authentication.tokenUrl]
+            : []),
+        ])
+        .filter(Boolean);
       for (const value of [...new Set(targets)]) {
         const target = new URL(value);
         const origin = `${target.protocol}//${target.host}`;
@@ -165,7 +169,11 @@ export function activate(context: vscode.ExtensionContext): void {
           ]);
         }
       }
-      if (config.authentication && config.authentication.mode !== "none") {
+      if (
+        requests.some(
+          (r) => r.authentication && r.authentication.mode !== "none",
+        )
+      ) {
         if (
           (await vscode.window.showWarningMessage(
             "Credentials will be sent to the selected targets and OAuth endpoint, where configured. Confirm these services are authorized. Plain HTTP and WS do not encrypt credentials.",
@@ -404,6 +412,7 @@ export function activate(context: vscode.ExtensionContext): void {
         await panel?.webview.postMessage({
           type: "fileChosen",
           purpose: message.purpose,
+          scenario: message.scenario,
           path: uri.fsPath,
           format: extension,
           columns,

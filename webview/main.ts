@@ -265,6 +265,8 @@ function configForm(): HTMLElement {
   const builder = workloadBuilder(
     draft,
     state?.runs.flatMap((run) => run.metricCatalog ?? []) ?? [],
+    false,
+    post,
   );
   advanced.append(
     builder,
@@ -429,6 +431,8 @@ function metrics(run: Run): HTMLElement {
         "Authoritative run-wide 95th percentile, when a k6 summary is available.";
     grid.append(card);
   }
+  if (run.protocol === "mixed")
+    grid.append(...metrics({ ...run, protocol: "ws" }).children);
   return grid;
 }
 function chart(
@@ -1146,18 +1150,22 @@ post({ type: "ready" });
 window.addEventListener("message", (event: MessageEvent) => {
   const data = event.data;
   if (data.type !== "fileChosen") return;
+  const config = data.scenario
+    ? draft.scenarios?.find((s) => s.name === data.scenario)?.request
+    : draft;
+  if (!config) return;
   if (data.purpose === "upload")
-    draft.upload = {
+    config.upload = {
       path: data.path,
-      field: draft.upload?.field ?? "file",
+      field: config.upload?.field ?? "file",
       filename: data.path.split(/[\\/]/).pop() ?? "upload.bin",
       contentType: "application/octet-stream",
     };
-  else if (data.purpose === "proto" && draft.protocol)
-    draft.protocol.protoFile = data.path;
-  else if (data.purpose === "dataset" && draft.dataset) {
-    draft.dataset.file = data.path;
-    draft.dataset.format = data.format;
+  else if (data.purpose === "proto" && config.protocol)
+    config.protocol.protoFile = data.path;
+  else if (data.purpose === "dataset" && config.dataset) {
+    config.dataset.file = data.path;
+    config.dataset.format = data.format;
   } else if (data.purpose === "jsonOutput" || data.purpose === "csvOutput") {
     draft.outputs ??= [];
     draft.outputs.push({

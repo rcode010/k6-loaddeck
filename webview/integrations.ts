@@ -65,6 +65,7 @@ export function integrationBuilder(
   config: QuickTest,
   post: (m: ClientMessage) => void,
   availableOutputs: string[] = [],
+  requestOnly = false,
 ): HTMLElement {
   const root = node("div");
   function render(): void {
@@ -166,6 +167,16 @@ export function integrationBuilder(
         ],
       ),
     );
+    for (const option of authentication.querySelectorAll("option")) {
+      if (
+        (p.kind === "grpc" &&
+          !["none", "bearer", "apiKey"].includes(option.value)) ||
+        (p.kind === "ws" && ["digest", "mtls"].includes(option.value))
+      ) {
+        option.disabled = true;
+        option.textContent += " (unavailable for this protocol)";
+      }
+    }
     if (a.mode !== "none") {
       if (["basic", "digest", "oauth2"].includes(a.mode))
         authentication.append(
@@ -397,7 +408,7 @@ export function integrationBuilder(
         ),
       );
     }
-    root.append(outputs);
+    if (!requestOnly) root.append(outputs);
     for (const detail of root.querySelectorAll("details"))
       if (opened.has(detail.querySelector("summary")?.textContent))
         detail.open = true;

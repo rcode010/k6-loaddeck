@@ -1,5 +1,6 @@
 import { checkKinds } from "./checks";
 import type { QuickTest } from "./model";
+import { scenarioConfig } from "./requests";
 export interface ProtocolConfig {
   kind: "http" | "http2" | "ws" | "grpc";
   message: string;
@@ -105,13 +106,12 @@ export function validateIntegrations(c: QuickTest): void {
     if (check.enabled && !allowed.includes(check.kind))
       throw new Error(`Check ${check.name} is not applicable to ${kind}.`);
   }
-  if (c.scenarios)
+  if (c.scenarios && !c.scenarios.some((s) => s.request))
     for (const scenario of c.scenarios) {
       const target = new URL(scenario.url || c.url);
-      const base = new URL(c.url);
-      if (target.protocol !== base.protocol)
+      if (p?.kind === "grpc" && p.plaintext !== (target.protocol === "grpc:"))
         throw new Error(
-          "Scenario target scheme must match the selected protocol.",
+          "Scenario targets must match the gRPC plaintext/TLS setting.",
         );
     }
   const auth = c.authentication;
@@ -164,6 +164,8 @@ export function validateIntegrations(c: QuickTest): void {
       throw new Error(
         "gRPC supports Bearer and header API keys in this builder.",
       );
+    if (p?.kind === "ws" && auth.mode === "digest")
+      throw new Error("Digest authentication is supported for HTTP only.");
     if (
       p?.kind === "grpc" &&
       auth.mode === "apiKey" &&
@@ -209,6 +211,9 @@ export function credentialVariables(c: QuickTest): string[] {
   const a = c.authentication;
   const urlVariables = [
     c.url,
+    c.body,
+    c.protocol?.message ?? "",
+    ...Object.values(c.headers),
     ...(c.scenarios ?? []).map((s) => s.url),
   ].flatMap((value) =>
     [...value.matchAll(/\$\{([A-Z_][A-Z0-9_]*)\}/g)].map((match) => match[1]!),
@@ -230,7 +235,19 @@ export function credentialVariables(c: QuickTest): string[] {
         c.externalOutput.passwordVariable,
       ].filter(Boolean),
     );
-  return [...new Set([...list, ...urlVariables])];
+  return [
+    ...new Set([
+      ...list,
+      ...urlVariables,
+      ...(c.scenarios ?? [])
+        .filter((s) => s.enabled)
+        .flatMap((s) =>
+          credentialVariables(scenarioConfig(c, s)).filter(
+            (name) => !Object.hasOwn(s.env ?? {}, name),
+          ),
+        ),
+    ]),
+  ];
 }
 export function parseCsv(text: string): Record<string, string>[] {
   const rows: string[][] = [];

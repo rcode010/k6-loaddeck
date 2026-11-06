@@ -1,4 +1,4 @@
-import type { QuickTest } from "./model";
+import type { QuickTest, RequestConfig } from "./model";
 import { durationSeconds } from "./duration";
 export const executors = [
   "shared-iterations",
@@ -14,6 +14,8 @@ export interface Stage {
   target: number;
 }
 export interface Scenario {
+  request?: RequestConfig;
+  env?: Record<string, string>;
   name: string;
   enabled: boolean;
   executor: Executor;
@@ -44,6 +46,7 @@ export function scenarioOptions(
     startTime: s.startTime,
     gracefulStop: s.gracefulStop,
     tags: s.tags,
+    ...(s.env ? { env: s.env } : {}),
   };
   const keys: Record<Executor, string[]> = {
     "shared-iterations": ["vus", "iterations", "maxDuration"],
@@ -148,6 +151,25 @@ export function validateScenarios(scenarios: Scenario[]): void {
       Object.values(s.tags).some((v) => typeof v !== "string")
     )
       throw new Error("Scenario tags must be strings.");
+    if (
+      s.env !== undefined &&
+      (!s.env ||
+        typeof s.env !== "object" ||
+        Array.isArray(s.env) ||
+        Object.keys(s.env).length > 100 ||
+        Object.entries(s.env).some(
+          ([key, value]) =>
+            !/^[A-Z_][A-Z0-9_]*$/.test(key) ||
+            /^(K6_|LOADDECK_SUMMARY$)|TOKEN|SECRET|PASSWORD|CREDENTIAL|PRIVATE_KEY|API_KEY/.test(
+              key,
+            ) ||
+            typeof value !== "string" ||
+            value.length > 8192,
+        ))
+    )
+      throw new Error(
+        "Scenario environment must contain nonsecret uppercase variables; protected credentials and k6 options belong in their dedicated controls.",
+      );
     if (/arrival-rate$/.test(s.executor)) {
       integer(s.preAllocatedVUs, "Preallocated VUs");
       if (s.maxVUs !== undefined) {

@@ -3,28 +3,27 @@ import { validateIntegrations } from "./integrations";
 import { validateScenarios, validateChecks } from "./workload";
 import { createHash } from "node:crypto";
 import type { QuickTest } from "./model";
+import { scenarioConfig } from "./requests";
 
 export { durationSeconds } from "./duration";
 import { durationSeconds } from "./duration";
-export function validateQuickTest(value: unknown): QuickTest {
-  if (!value || typeof value !== "object")
-    throw new Error("Invalid test configuration.");
-  const c = value as QuickTest;
-  if (typeof c.url !== "string" || c.url.length > 8192)
-    throw new Error("URL: enter an HTTP or HTTPS URL.");
+function validateTarget(value: unknown, protocol: string): void {
+  if (typeof value !== "string" || value.length > 8192)
+    throw new Error("URL: enter a target URL of at most 8192 characters.");
   let url: URL;
   try {
-    url = new URL(c.url);
+    url = new URL(value);
   } catch {
     throw new Error("URL: enter a valid absolute URL.");
   }
-  if (
-    !["http:", "https:", "ws:", "wss:", "grpc:", "grpcs:"].includes(
-      url.protocol,
-    ) ||
-    !url.hostname
-  )
-    throw new Error("URL: only HTTP and HTTPS are supported.");
+  const schemes =
+    protocol === "ws"
+      ? ["ws:", "wss:"]
+      : protocol === "grpc"
+        ? ["grpc:", "grpcs:"]
+        : ["http:", "https:"];
+  if (!schemes.includes(url.protocol) || !url.hostname)
+    throw new Error(`URL scheme must match ${protocol}.`);
   for (const [key, val] of url.searchParams)
     if (
       /token|secret|password|api[-_]?key|authorization/i.test(key) &&
@@ -37,6 +36,15 @@ export function validateQuickTest(value: unknown): QuickTest {
     throw new Error(
       "URL: use environment-backed authentication rather than embedded credentials.",
     );
+}
+export function validateQuickTest(
+  value: unknown,
+  scenarioName?: string,
+): QuickTest {
+  if (!value || typeof value !== "object")
+    throw new Error("Invalid test configuration.");
+  const c = value as QuickTest;
+  validateTarget(c.url, c.protocol?.kind ?? "http");
   if (
     !["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"].includes(
       c.method,
@@ -111,22 +119,13 @@ export function validateQuickTest(value: unknown): QuickTest {
   configuredThresholds(c);
   if (c.scenarios) {
     validateScenarios(c.scenarios);
-    for (const scenario of c.scenarios) {
-      const target = new URL(scenario.url || c.url);
-      if (
-        !["http:", "https:"].includes(target.protocol) ||
-        target.username ||
-        target.password
-      )
-        throw new Error(
-          "Scenario target must be an HTTP URL without embedded credentials.",
-        );
-    }
+    for (const scenario of c.scenarios)
+      validateQuickTest(scenarioConfig(c, scenario), scenario.name);
   }
   if (c.checks) {
     validateChecks(c.checks);
     const names = new Set(
-      (c.scenarios ?? [{ name: "main", enabled: true }])
+      (c.scenarios ?? [{ name: scenarioName ?? "main", enabled: true }])
         .filter((s) => s.enabled)
         .map((s) => s.name),
     );
@@ -137,8 +136,6 @@ export function validateQuickTest(value: unknown): QuickTest {
         );
   }
   validateIntegrations(c);
-  if (!c.protocol && !["http:", "https:"].includes(url.protocol))
-    throw new Error("Choose the matching protocol in Advanced options.");
   return {
     ...c,
     url: c.url,
@@ -169,6 +166,9 @@ export function safeConfig(config: QuickTest): QuickTest | undefined {
     config.protocol ||
     config.outputs?.length ||
     config.externalOutput?.enabled ||
+    config.scenarios?.some(
+      (s) => s.request && !safeConfig(scenarioConfig(config, s)),
+    ) ||
     config.scenarios?.some((s) => {
       const u = new URL(s.url || config.url);
       return Boolean(u.search || u.hash);

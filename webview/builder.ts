@@ -6,6 +6,10 @@ import {
   type MetricType,
 } from "../src/thresholds";
 import type { QuickTest } from "../src/model";
+import { defaultTest } from "../src/model";
+import { requestConfig } from "../src/requests";
+import { requestEditor } from "./request";
+import type { ClientMessage } from "../src/model";
 import {
   executors,
   checkKinds,
@@ -77,6 +81,8 @@ function section(title: string, description: string): HTMLDetailsElement {
 export function workloadBuilder(
   config: QuickTest,
   catalog: MetricDefinition[] = [],
+  requestOnly = false,
+  post: (m: ClientMessage) => void = () => undefined,
 ): HTMLElement {
   const available = new Map(
     builtinMetrics.map((metric) => [metric.name, metric]),
@@ -205,6 +211,44 @@ export function workloadBuilder(
         }
       });
       card.append(tags);
+      const env = node("textarea");
+      env.value = JSON.stringify(scenario.env ?? {}, null, 2);
+      env.setAttribute("aria-label", "Scenario nonsecret environment as JSON");
+      env.addEventListener("change", () => {
+        try {
+          scenario.env = JSON.parse(env.value);
+          env.setCustomValidity("");
+        } catch {
+          env.setCustomValidity("Enter a JSON object of nonsecret variables.");
+        }
+      });
+      card.append(env);
+      if (scenario.request) {
+        const request = section(
+          "Independent request",
+          "This scenario uses its own protocol, request, authentication, data and checks.",
+        );
+        request.append(
+          requestEditor(scenario.request as QuickTest, (m) =>
+            post(
+              m.type === "chooseFile" ? { ...m, scenario: scenario.name } : m,
+            ),
+          ),
+        );
+        card.append(
+          request,
+          action("Use shared request", () => {
+            delete scenario.request;
+            render();
+          }),
+        );
+      } else
+        card.append(
+          action("Customize scenario request", () => {
+            scenario.request = { ...defaultTest, ...requestConfig(config) };
+            render();
+          }),
+        );
       card.append(
         action("Remove scenario", () => {
           items.splice(index, 1);
@@ -252,7 +296,7 @@ export function workloadBuilder(
           render();
         }),
       );
-    root.append(scenarios);
+    if (!requestOnly) root.append(scenarios);
     const checks = section(
       "Checks",
       "Checks validate responses. They change the exit result only when a checks threshold is configured.",
@@ -508,7 +552,7 @@ export function workloadBuilder(
         render();
       }),
     );
-    root.append(thresholds);
+    if (!requestOnly) root.append(thresholds);
     for (const d of root.querySelectorAll("details"))
       if (opened.has(d.querySelector("summary")?.textContent)) d.open = true;
   }

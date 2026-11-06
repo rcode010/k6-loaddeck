@@ -181,5 +181,6 @@ export function scopedRun(run: Run, scenario?: string): Run {
     metrics,
     series: run.scenarioSeries?.[scenario] ?? [],
     protocolMetrics: run.scenarioProtocolMetrics?.[scenario] ?? {},
+    protocol: run.scenarioProtocols?.[scenario] ?? run.protocol,
   };
 }

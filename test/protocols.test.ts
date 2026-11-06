@@ -13,6 +13,7 @@ import { K6Runner } from "../src/runner";
 import { validateQuickTest, generateScript } from "../src/definition";
 import { parseCsv } from "../src/integrations";
 import { exportRun } from "../src/reports";
+import { defaultScenario } from "../src/workload";
 
 const binary = process.env.LOADDECK_TEST_K6;
 test("CSV handles quoted commas, newlines and escaped quotes", () => {
@@ -87,6 +88,9 @@ test(
           },
         ],
       };
+      wsConfig.scenarios = [
+        { ...defaultScenario(wsConfig), name: "socket_echo" },
+      ];
       const wsRun = await new K6Runner().run(
         binary!,
         "fixture",
@@ -95,6 +99,11 @@ test(
       );
       assert.equal(wsRun.state, "completed", wsRun.logs.join("\n"));
       assert.ok(wsRun.metrics.checksPassed! > 0);
+      assert.ok(
+        (wsRun.scenarioProtocolMetrics?.socket_echo?.[
+          "ws_msgs_received.count"
+        ] ?? 0) > 0,
+      );
       assert.ok(
         Object.keys(wsRun.protocolMetrics ?? {}).some((k) =>
           k.startsWith("ws_"),
@@ -131,6 +140,9 @@ test(
           },
         ],
       };
+      grpcConfig.scenarios = [
+        { ...defaultScenario(grpcConfig), name: "rpc_echo" },
+      ];
       const grpcRun = await new K6Runner().run(
         binary!,
         "fixture",
@@ -165,8 +177,8 @@ test(
         ),
       );
       assert.ok(
-        Object.keys(wsRun.scenarioProtocolMetrics?.main ?? {}).some((key) =>
-          key.startsWith("ws_"),
+        Object.keys(wsRun.scenarioProtocolMetrics?.socket_echo ?? {}).some(
+          (key) => key.startsWith("ws_"),
         ),
       );
     } finally {

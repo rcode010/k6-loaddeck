@@ -25,6 +25,7 @@ import {
   safeTarget,
 } from "./definition";
 import type { Installation, QuickTest, Run } from "./model";
+import { activeRequests } from "./requests";
 
 export async function discover(binary: string): Promise<Installation> {
   try {
@@ -93,6 +94,10 @@ export class K6Runner {
       );
     const config = "config" in input ? input.config : undefined;
     const script = "script" in input ? input.script : undefined;
+    const requests = config ? activeRequests(config) : [];
+    const protocols = [
+      ...new Set(requests.map((r) => r.protocol?.kind ?? "http")),
+    ];
     const started = Date.now();
     const run: Run = {
       schemaVersion: 1,
@@ -163,7 +168,18 @@ export class K6Runner {
       state: "starting",
       exitCode: null,
       k6Version: version,
-      protocol: config?.protocol?.kind ?? (config ? "http" : "custom"),
+      protocol: config
+        ? protocols.length === 1
+          ? protocols[0]
+          : "mixed"
+        : "custom",
+      scenarioProtocols: config?.scenarios
+        ? Object.fromEntries(
+            config.scenarios
+              .filter((s) => s.enabled)
+              .map((s, i) => [s.name, requests[i]!.protocol?.kind ?? "http"]),
+          )
+        : undefined,
       thresholdsConfigured: config
         ? configuredThresholds(config).length > 0
         : undefined,
@@ -218,7 +234,7 @@ export class K6Runner {
       const secrets = config
         ? credentialVariables(config)
             .map((name) => environment[name] ?? "")
-            .concat(config.body ? [config.body] : [])
+            .concat(requests.flatMap((r) => (r.body ? [r.body] : [])))
         : Object.values(
             "environment" in input ? (input.environment ?? {}) : {},
           );
@@ -226,38 +242,40 @@ export class K6Runner {
         for (const name of credentialVariables(config))
           if (!environment[name])
             throw new Error(`Missing credential variable: ${name}`);
-        if (config.upload) {
-          const info = await open(config.upload.path, "r");
-          try {
-            if ((await info.stat()).size > 20 * 1024 * 1024)
-              throw new Error("Upload exceeds the 20 MiB limit.");
-          } finally {
-            await info.close();
+        for (const request of requests) {
+          if (request.upload) {
+            const info = await open(request.upload.path, "r");
+            try {
+              if ((await info.stat()).size > 20 * 1024 * 1024)
+                throw new Error("Upload exceeds the 20 MiB limit.");
+            } finally {
+              await info.close();
+            }
           }
-        }
-        if (config.dataset?.file) {
-          const file = await open(config.dataset.file, "r");
-          try {
-            if ((await file.stat()).size > 20 * 1024 * 1024)
-              throw new Error("Dataset exceeds the 20 MiB limit.");
-          } finally {
-            await file.close();
-          }
-          const text = await readFile(config.dataset.file, "utf8");
-          const rows =
-            config.dataset.format === "json"
-              ? JSON.parse(text)
-              : parseCsv(text);
-          if (
-            !Array.isArray(rows) ||
-            !rows.length ||
-            rows.some(
-              (row) => !row || typeof row !== "object" || Array.isArray(row),
+          if (request.dataset?.file) {
+            const file = await open(request.dataset.file, "r");
+            try {
+              if ((await file.stat()).size > 20 * 1024 * 1024)
+                throw new Error("Dataset exceeds the 20 MiB limit.");
+            } finally {
+              await file.close();
+            }
+            const text = await readFile(request.dataset.file, "utf8");
+            const rows =
+              request.dataset.format === "json"
+                ? JSON.parse(text)
+                : parseCsv(text);
+            if (
+              !Array.isArray(rows) ||
+              !rows.length ||
+              rows.some(
+                (row) => !row || typeof row !== "object" || Array.isArray(row),
+              )
             )
-          )
-            throw new Error(
-              "Dataset must contain a nonempty array of row objects.",
-            );
+              throw new Error(
+                "Dataset must contain a nonempty array of row objects.",
+              );
+          }
         }
       }
       const args = ["run"];

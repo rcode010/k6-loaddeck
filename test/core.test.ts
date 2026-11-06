@@ -11,6 +11,68 @@ import {
 } from "../src/definition";
 import { Aggregator, JsonLines, readSummary } from "../src/metrics";
 import { redactLog } from "../src/runner";
+import { defaultScenario } from "../src/workload";
+import type { Authentication, ProtocolConfig } from "../src/integrations";
+
+test("scenario targets validate protocol families and protected query values", () => {
+  const valid = { ...defaultTest, url: "http://localhost/" };
+  const scenario = defaultScenario(valid);
+  assert.doesNotThrow(() =>
+    validateQuickTest({
+      ...valid,
+      scenarios: [{ ...scenario, url: "https://localhost/" }],
+    }),
+  );
+  for (const url of [
+    "https://localhost/?token=literal-secret",
+    "https://user:pass@localhost/",
+    "file:///tmp/test",
+    "ws://localhost/",
+  ])
+    assert.throws(() =>
+      validateQuickTest({ ...valid, scenarios: [{ ...scenario, url }] }),
+    );
+  assert.doesNotThrow(() =>
+    validateQuickTest({
+      ...valid,
+      scenarios: [
+        { ...scenario, url: "https://localhost/?token=${API_TOKEN}" },
+      ],
+    }),
+  );
+  const protocol: ProtocolConfig = {
+    kind: "ws",
+    message: "hello",
+    sessionMs: 100,
+    grpcMethod: "",
+    protoFile: "",
+    importPaths: [],
+    plaintext: true,
+  };
+  const websocket = { ...valid, url: "ws://localhost/", protocol };
+  assert.doesNotThrow(() =>
+    validateQuickTest({
+      ...websocket,
+      scenarios: [{ ...scenario, url: "wss://localhost/" }],
+    }),
+  );
+  const authentication: Authentication = {
+    mode: "digest",
+    usernameVariable: "USER",
+    secretVariable: "PASSWORD",
+    keyName: "",
+    placement: "header",
+    tokenUrl: "",
+    scope: "",
+    audience: "",
+    certificateVariable: "",
+    privateKeyVariable: "",
+  };
+  assert.throws(
+    () => validateQuickTest({ ...websocket, authentication }),
+    /Digest.*HTTP/,
+  );
+});
 
 test("request validation rejects unsafe input and accepts JSON POST", () => {
   const valid = { ...defaultTest, url: "http://127.0.0.1:8080" };

@@ -127,6 +127,50 @@ test(
         .getByRole("button", { name: "Use advanced scenarios" })
         .click();
       await page
+        .getByRole("button", { name: "Customize scenario request" })
+        .click();
+      const scenarioEditor = page.getByRole("group", {
+        name: "Scenario 1",
+        exact: true,
+      });
+      await scenarioEditor
+        .getByText("Independent request", { exact: true })
+        .click();
+      await scenarioEditor
+        .getByLabel("Request method", { exact: true })
+        .selectOption("POST");
+      await scenarioEditor
+        .getByLabel("Request payload", { exact: true })
+        .fill("scenario payload");
+      await page
+        .getByRole("button", { name: "Preview script", exact: true })
+        .click();
+      const independent = await page.evaluate(() =>
+        (
+          window as unknown as {
+            messages: {
+              type: string;
+              config?: {
+                scenarios?: { request?: { method: string; body: string } }[];
+              };
+            }[];
+          }
+        ).messages
+          .filter((m) => m.type === "preview")
+          .at(-1),
+      );
+      assert.equal(
+        independent?.config?.scenarios?.[0]?.request?.method,
+        "POST",
+      );
+      assert.equal(
+        independent?.config?.scenarios?.[0]?.request?.body,
+        "scenario payload",
+      );
+      await page
+        .getByRole("button", { name: "Use shared request", exact: true })
+        .click();
+      await page
         .getByLabel("Executor", { exact: true })
         .selectOption("constant-arrival-rate")
         .catch(async () => {

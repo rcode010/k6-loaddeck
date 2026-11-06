@@ -45,6 +45,21 @@ export interface QuickTest {
   expectedStatus?: number;
   thresholds: Record<string, string[]>;
 }
+export type RequestConfig = Pick<
+  QuickTest,
+  | "url"
+  | "method"
+  | "sleep"
+  | "headers"
+  | "body"
+  | "bodyMode"
+  | "upload"
+  | "expectedStatus"
+  | "protocol"
+  | "authentication"
+  | "dataset"
+  | "checks"
+>;
 export interface Metrics {
   requests?: number;
   rps?: number;
@@ -117,6 +132,7 @@ export interface Run {
   scenarioMetrics?: Record<string, Metrics>;
   scenarioSeries?: Record<string, Bucket[]>;
   scenarioProtocolMetrics?: Record<string, Record<string, number>>;
+  scenarioProtocols?: Record<string, string>;
   protocolMetrics?: Record<string, number>;
   metrics: Metrics;
   series: Bucket[];
@@ -156,6 +172,7 @@ export type ClientMessage =
       type: "chooseFile";
       purpose: "dataset" | "proto" | "jsonOutput" | "csvOutput" | "upload";
       format?: "json" | "csv";
+      scenario?: string;
     };
 export const defaultTest: QuickTest = {
   name: "",
