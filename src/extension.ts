@@ -17,6 +17,7 @@ import { discover, K6Runner } from "./runner";
 import { HistoryStore } from "./history";
 import { activeRequests } from "./requests";
 import { workloadLoad } from "./load";
+import { protoMethods } from "./proto";
 
 class Navigation implements vscode.TreeDataProvider<vscode.TreeItem> {
   getTreeItem(item: vscode.TreeItem): vscode.TreeItem {
@@ -324,6 +325,21 @@ export function activate(context: vscode.ExtensionContext): void {
     )
       throw new Error("Invalid dashboard message.");
     const message = raw as ClientMessage;
+    if (message.type === "inspectProto") {
+      if (
+        typeof message.file !== "string" ||
+        !Array.isArray(message.importPaths) ||
+        message.importPaths.some((p) => typeof p !== "string")
+      )
+        throw new Error("Select a gRPC schema and valid import paths.");
+      const methods = await protoMethods(message.file, message.importPaths);
+      await panel?.webview.postMessage({
+        type: "protoMethods",
+        methods,
+        scenario: message.scenario,
+      });
+      return;
+    }
     if (message.type === "credential") {
       if (!/^[A-Z_][A-Z0-9_]*$/.test(message.name))
         throw new Error("Use an uppercase runtime variable name.");
@@ -387,6 +403,10 @@ export function activate(context: vscode.ExtensionContext): void {
           columns,
           rowCount,
           schema,
+          methods:
+            message.purpose === "proto"
+              ? await protoMethods(uri.fsPath)
+              : undefined,
         });
       }
       return;

@@ -27,6 +27,7 @@ import {
 } from "./definition";
 import type { Installation, QuickTest, Run } from "./model";
 import { activeRequests } from "./requests";
+import { protoMethods } from "./proto";
 
 export async function discover(binary: string): Promise<Installation> {
   try {
@@ -244,6 +245,18 @@ export class K6Runner {
           if (!environment[name])
             throw new Error(`Missing credential variable: ${name}`);
         for (const request of requests) {
+          if (request.protocol?.kind === "grpc") {
+            const methods = await protoMethods(
+              request.protocol.protoFile,
+              request.protocol.importPaths,
+            );
+            if (
+              !methods.includes(request.protocol.grpcMethod.replace(/^\//, ""))
+            )
+              throw new Error(
+                "Choose a unary service/method declared by the selected gRPC schema.",
+              );
+          }
           if (request.upload) {
             const info = await open(request.upload.path, "r");
             try {

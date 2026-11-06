@@ -241,7 +241,9 @@ export function workloadBuilder(
         request.append(
           requestEditor(scenario.request as QuickTest, (m) =>
             post(
-              m.type === "chooseFile" ? { ...m, scenario: scenario.name } : m,
+              m.type === "chooseFile" || m.type === "inspectProto"
+                ? { ...m, scenario: scenario.name }
+                : m,
             ),
           ),
         );

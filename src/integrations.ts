@@ -1,7 +1,14 @@
 import { checkKinds } from "./checks";
 import type { QuickTest } from "./model";
 import { scenarioConfig } from "./requests";
+import { durationSeconds } from "./duration";
 export interface ProtocolConfig {
+  timeout?: string;
+  redirects?: number;
+  messages?: { text: string; delayMs: number }[];
+  expectedMessages?: number;
+  receiveDeadlineMs?: number;
+  methods?: string[];
   kind: "http" | "http2" | "ws" | "grpc";
   message: string;
   sessionMs: number;
@@ -69,6 +76,20 @@ export function validateIntegrations(c: QuickTest): void {
   if (p) {
     if (!["http", "http2", "ws", "grpc"].includes(p.kind))
       throw new Error("Select a supported protocol.");
+    if (
+      p.timeout !== undefined &&
+      (!Number.isFinite(durationSeconds(p.timeout)) ||
+        durationSeconds(p.timeout) <= 0 ||
+        durationSeconds(p.timeout) > 300)
+    )
+      throw new Error(
+        "Protocol timeout must be greater than zero and at most 5 minutes.",
+      );
+    if (
+      p.redirects !== undefined &&
+      (!Number.isInteger(p.redirects) || p.redirects < 0 || p.redirects > 20)
+    )
+      throw new Error("Redirect limit must be an integer from 0 to 20.");
     const url = new URL(c.url);
     const protocols =
       p.kind === "ws"
@@ -85,6 +106,42 @@ export function validateIntegrations(c: QuickTest): void {
         p.sessionMs > 300000)
     )
       throw new Error("WebSocket session: use 100–300000 milliseconds.");
+    if (p.kind === "ws") {
+      if (
+        p.messages !== undefined &&
+        (!Array.isArray(p.messages) ||
+          p.messages.length > 100 ||
+          p.messages.some(
+            (m) =>
+              typeof m.text !== "string" ||
+              m.text.length > 1024 * 1024 ||
+              !Number.isInteger(m.delayMs) ||
+              m.delayMs < 0 ||
+              m.delayMs >= p.sessionMs,
+          ))
+      )
+        throw new Error(
+          "WebSocket messages need text and a nonnegative delay shorter than the session; maximum 100 messages.",
+        );
+      if (
+        p.expectedMessages !== undefined &&
+        (!Number.isInteger(p.expectedMessages) ||
+          p.expectedMessages < 0 ||
+          p.expectedMessages > 1000000)
+      )
+        throw new Error(
+          "Expected WebSocket message count must be a nonnegative integer.",
+        );
+      if (
+        p.receiveDeadlineMs !== undefined &&
+        (!Number.isInteger(p.receiveDeadlineMs) ||
+          p.receiveDeadlineMs < 1 ||
+          p.receiveDeadlineMs > p.sessionMs)
+      )
+        throw new Error(
+          "Receive deadline must be within the WebSocket session.",
+        );
+    }
     if (p.kind === "grpc") {
       if (
         !/^\/?[A-Za-z_][\w.]*\/[A-Za-z_]\w*$/.test(p.grpcMethod) ||
@@ -142,8 +199,10 @@ export function validateIntegrations(c: QuickTest): void {
     if (auth.mode === "mtls") {
       variable(auth.certificateVariable);
       variable(auth.privateKeyVariable);
-      if (p?.kind === "grpc" || p?.kind === "ws")
-        throw new Error("mTLS builder currently supports HTTP only.");
+      if (new URL(c.url).protocol === "grpc:")
+        throw new Error(
+          "Client-certificate authentication requires TLS: use grpcs://.",
+        );
     } else variable(auth.secretVariable);
     if (["basic", "digest", "oauth2"].includes(auth.mode))
       variable(auth.usernameVariable);
@@ -163,9 +222,9 @@ export function validateIntegrations(c: QuickTest): void {
           "OAuth token endpoint must be HTTP(S) without embedded credentials.",
         );
     }
-    if (p?.kind === "grpc" && !["bearer", "apiKey"].includes(auth.mode))
+    if (p?.kind === "grpc" && !["bearer", "apiKey", "mtls"].includes(auth.mode))
       throw new Error(
-        "gRPC supports Bearer and header API keys in this builder.",
+        "gRPC supports Bearer, header API keys and client certificates in this builder.",
       );
     if (p?.kind === "ws" && auth.mode === "digest")
       throw new Error("Digest authentication is supported for HTTP only.");
@@ -228,6 +287,7 @@ export function credentialVariables(c: QuickTest): string[] {
     c.url,
     c.body,
     c.protocol?.message ?? "",
+    ...(c.protocol?.messages ?? []).map((m) => m.text),
     ...Object.values(c.headers),
     ...(c.scenarios ?? []).map((s) => s.url),
   ].flatMap((value) =>

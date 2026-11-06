@@ -104,6 +104,20 @@ export function integrationBuilder(
         ["http", "http2", "ws", "grpc"],
       ),
     );
+    if (p.kind !== "ws")
+      protocol.append(
+        field("Request timeout", p.timeout ?? "30s", (v) => {
+          p.timeout = v;
+          config.protocol = p;
+        }),
+      );
+    if (["http", "http2"].includes(p.kind))
+      protocol.append(
+        field("Maximum redirects", p.redirects ?? 10, (v) => {
+          p.redirects = Number(v);
+          config.protocol = p;
+        }),
+      );
     if (p.kind === "ws")
       protocol.append(
         field("Message to send", p.message, (v) => (p.message = v)),
@@ -113,6 +127,48 @@ export function integrationBuilder(
           (v) => (p.sessionMs = Number(v)),
         ),
       );
+    if (p.kind === "ws") {
+      protocol.append(
+        field(
+          "Minimum received messages",
+          p.expectedMessages ?? 0,
+          (v) => (p.expectedMessages = Number(v)),
+        ),
+        field(
+          "Receive deadline (ms)",
+          p.receiveDeadlineMs ?? p.sessionMs,
+          (v) => (p.receiveDeadlineMs = Number(v)),
+        ),
+      );
+      for (const [index, message] of (p.messages ?? []).entries())
+        protocol.append(
+          field(
+            `Message ${index + 1} text`,
+            message.text,
+            (v) => (message.text = v),
+          ),
+          field(
+            `Message ${index + 1} delay (ms)`,
+            message.delayMs,
+            (v) => (message.delayMs = Number(v)),
+          ),
+          button(`Remove message ${index + 1}`, () => {
+            p.messages!.splice(index, 1);
+            render();
+          }),
+        );
+      protocol.append(
+        button("Add scheduled message", () => {
+          p.messages ??= [{ text: p.message, delayMs: 0 }];
+          p.messages.push({ text: "hello", delayMs: 100 });
+          render();
+        }),
+        node(
+          "p",
+          "Scheduled messages replace the single message. Receive expectations count messages received before the deadline. A checks threshold makes unmet expectations fail the run.",
+        ),
+      );
+    }
     if (p.kind === "grpc")
       protocol.append(
         field("Proto file", p.protoFile, (v) => (p.protoFile = v)),
@@ -130,6 +186,29 @@ export function integrationBuilder(
           "Plaintext (grpc://); disable for grpcs://",
           p.plaintext,
           (v) => (p.plaintext = v === "true"),
+        ),
+      );
+    if (p.kind === "grpc")
+      protocol.append(
+        button("Read schema methods", () =>
+          post({
+            type: "inspectProto",
+            file: p.protoFile,
+            importPaths: p.importPaths,
+          }),
+        ),
+        field(
+          "Discovered unary method",
+          p.grpcMethod,
+          (v) => {
+            p.grpcMethod = v;
+            render();
+          },
+          ["", ...(p.methods ?? [])],
+        ),
+        node(
+          "p",
+          "Select a schema to discover unary service methods. Streaming methods remain available through existing scripts.",
         ),
       );
     root.append(protocol);
@@ -172,8 +251,8 @@ export function integrationBuilder(
     for (const option of authentication.querySelectorAll("option")) {
       if (
         (p.kind === "grpc" &&
-          !["none", "bearer", "apiKey"].includes(option.value)) ||
-        (p.kind === "ws" && ["digest", "mtls"].includes(option.value))
+          !["none", "bearer", "apiKey", "mtls"].includes(option.value)) ||
+        (p.kind === "ws" && option.value === "digest")
       ) {
         option.disabled = true;
         option.textContent += " (unavailable for this protocol)";

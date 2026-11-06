@@ -169,6 +169,12 @@ export type ClientMessage =
     }
   | { type: "credential"; name: string }
   | {
+      type: "inspectProto";
+      file: string;
+      importPaths: string[];
+      scenario?: string;
+    }
+  | {
       type: "chooseFile";
       purpose: "dataset" | "proto" | "jsonOutput" | "csvOutput" | "upload";
       format?: "json" | "csv";

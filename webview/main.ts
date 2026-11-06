@@ -1169,11 +1169,17 @@ post({ type: "ready" });
 
 window.addEventListener("message", (event: MessageEvent) => {
   const data = event.data;
-  if (data.type !== "fileChosen") return;
+  if (!["fileChosen", "protoMethods"].includes(data.type)) return;
   const config = data.scenario
     ? draft.scenarios?.find((s) => s.name === data.scenario)?.request
     : draft;
   if (!config) return;
+  if (data.type === "protoMethods") {
+    if (config.protocol) config.protocol.methods = data.methods;
+    render();
+    for (const detail of root.querySelectorAll("details")) detail.open = true;
+    return;
+  }
   if (data.purpose === "upload")
     config.upload = {
       path: data.path,
@@ -1181,9 +1187,10 @@ window.addEventListener("message", (event: MessageEvent) => {
       filename: data.path.split(/[\\/]/).pop() ?? "upload.bin",
       contentType: "application/octet-stream",
     };
-  else if (data.purpose === "proto" && config.protocol)
+  else if (data.purpose === "proto" && config.protocol) {
     config.protocol.protoFile = data.path;
-  else if (data.purpose === "dataset" && config.dataset) {
+    config.protocol.methods = data.methods;
+  } else if (data.purpose === "dataset" && config.dataset) {
     config.dataset.file = data.path;
     config.dataset.format = data.format;
     config.dataset.columns = data.schema;
