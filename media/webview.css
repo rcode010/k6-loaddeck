@@ -341,10 +341,16 @@ pre {
   }
 }
 fieldset {
+  min-inline-size: 0;
   border: 1px solid var(--vscode-panel-border);
   border-radius: 6px;
   padding: 16px;
   margin: 16px 0;
+}
+.test-form svg {
+  width: 100%;
+  height: auto;
+  display: block;
 }
 legend {
   font-weight: 600;

@@ -431,6 +431,40 @@ test(
         path: "docs/screenshots/home-light-narrow.png",
         fullPage: true,
       });
+      await page.emulateMedia({
+        forcedColors: "active",
+        reducedMotion: "reduce",
+      });
+      await page.evaluate(() => {
+        for (const detail of document.querySelectorAll("details"))
+          detail.open = true;
+      });
+      assert.equal(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= window.innerWidth,
+        ),
+        true,
+      );
+      await page.getByRole("button", { name: "New test", exact: true }).focus();
+      await page.keyboard.press("Tab");
+      assert.equal(
+        await page.evaluate(() => document.activeElement?.tagName),
+        "BUTTON",
+      );
+      const highContrast = await new AxeBuilder({ page })
+        .withTags(["wcag2a", "wcag2aa", "wcag21aa"])
+        .analyze();
+      assert.deepEqual(
+        highContrast.violations.map((violation) => ({
+          id: violation.id,
+          nodes: violation.nodes.map((node) => node.target),
+        })),
+        [],
+      );
+      await page.screenshot({
+        path: "docs/screenshots/home-high-contrast-narrow.png",
+        fullPage: true,
+      });
       assert.deepEqual(errors, []);
     } finally {
       await browser.close();
