@@ -1,9 +1,10 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import path from "node:path";
+import { verifiedProfile } from "./capabilities";
 
 export function supportsScenarioSelection(version: string): boolean {
-  return /^k6 v?2\.3\./i.test(version);
+  return verifiedProfile(version);
 }
 export async function inspectScenarios(
   binary: string,

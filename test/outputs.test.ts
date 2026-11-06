@@ -4,10 +4,23 @@ import { createServer } from "node:http";
 import { defaultTest } from "../src/model";
 import { K6Runner } from "../src/runner";
 import { supportedExternalOutputs, externalEnvironment } from "../src/outputs";
+import { k6Version } from "../src/capabilities";
+import { supportsScenarioSelection } from "../src/scripts";
 
 test("external output capability profile and endpoint validation", () => {
   assert.deepEqual(supportedExternalOutputs("k6 v0.40.0"), []);
   assert.ok(supportedExternalOutputs("k6 v2.3.0").includes("influxdb"));
+  assert.deepEqual(k6Version("k6.exe v2.3.0 (go1.27, windows/amd64)"), {
+    major: 2,
+    minor: 3,
+    patch: 0,
+  });
+  assert.equal(
+    supportsScenarioSelection("k6.exe v2.3.0 (windows/amd64)"),
+    true,
+  );
+  assert.ok(supportedExternalOutputs("k6.exe v2.3.0").includes("influxdb"));
+  assert.equal(k6Version("not-k6 v2.3.0"), undefined);
   assert.throws(() =>
     externalEnvironment(
       {

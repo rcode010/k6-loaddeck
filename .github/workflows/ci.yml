@@ -27,5 +27,6 @@ jobs:
       - run: node --import tsx --test --test-reporter=./scripts/ci-reporter.mjs test/*.test.ts
         env:
           LOADDECK_TEST_K6: k6
+          LOADDECK_TEST_SYSTEM_CA: ${{ runner.os == 'macOS' && '1' || '0' }}
       - run: npm run format:check
       - run: npm run package

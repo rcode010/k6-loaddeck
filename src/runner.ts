@@ -22,6 +22,7 @@ import { activeRequests } from "./requests";
 import { protoMethods } from "./proto";
 import { supportsScenarioSelection } from "./scripts";
 import { runDirectory, recordEngine } from "./temporary";
+import { k6Version, verifiedProfile } from "./capabilities";
 
 export async function discover(binary: string): Promise<Installation> {
   try {
@@ -31,7 +32,7 @@ export async function discover(binary: string): Promise<Installation> {
       windowsHide: true,
     });
     const version = result.stdout.trim();
-    if (!/k6 v?\d+\.\d+/i.test(version))
+    if (!k6Version(version))
       throw new Error("Executable did not identify itself as k6.");
     return {
       ready: true,
@@ -330,7 +331,7 @@ export class K6Runner {
               ]
             : [],
         );
-        const secretNames = /^k6 v?2\.3\./i.test(version)
+        const secretNames = verifiedProfile(version)
           ? credentialVariables(config).filter((name) => {
               const value = environment[name];
               return (

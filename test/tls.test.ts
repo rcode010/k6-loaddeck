@@ -18,14 +18,20 @@ import { validateQuickTest } from "../src/definition";
 test(
   "real HTTP/2 negotiation and mutual TLS",
   {
-    skip: !process.env.LOADDECK_TEST_K6 || process.platform === "win32",
+    skip:
+      !process.env.LOADDECK_TEST_K6 ||
+      process.platform === "win32" ||
+      (process.platform === "darwin" &&
+        process.env.LOADDECK_TEST_SYSTEM_CA !== "1"),
     timeout: 30000,
   },
   async () => {
     const directory = await mkdtemp(path.join(tmpdir(), "loaddeck-tls-"));
+    let trusted = false;
+    let certificateFingerprint = "";
+    const certFile = path.join(directory, "cert.pem");
     try {
-      const keyFile = path.join(directory, "key.pem"),
-        certFile = path.join(directory, "cert.pem");
+      const keyFile = path.join(directory, "key.pem");
       await promisify(execFile)("openssl", [
         "req",
         "-x509",
@@ -47,6 +53,36 @@ test(
       ]);
       const cert = await readFile(certFile, "utf8"),
         key = await readFile(keyFile, "utf8");
+      if (process.platform === "darwin") {
+        const result = await promisify(execFile)("openssl", [
+          "x509",
+          "-in",
+          certFile,
+          "-noout",
+          "-fingerprint",
+          "-sha1",
+        ]);
+        certificateFingerprint = result.stdout
+          .split("=")[1]!
+          .replaceAll(":", "")
+          .trim();
+        await promisify(execFile)(
+          "sudo",
+          [
+            "-n",
+            "security",
+            "add-trusted-cert",
+            "-d",
+            "-r",
+            "trustRoot",
+            "-k",
+            "/Library/Keychains/System.keychain",
+            certFile,
+          ],
+          { timeout: 10000 },
+        );
+        trusted = true;
+      }
       const server = createSecureServer({
         key,
         cert,
@@ -235,7 +271,29 @@ test(
         rpc.forceShutdown();
       }
     } finally {
-      await rm(directory, { recursive: true, force: true });
+      try {
+        if (trusted) {
+          await promisify(execFile)(
+            "sudo",
+            ["-n", "security", "remove-trusted-cert", "-d", certFile],
+            { timeout: 10000 },
+          );
+          await promisify(execFile)(
+            "sudo",
+            [
+              "-n",
+              "security",
+              "delete-certificate",
+              "-Z",
+              certificateFingerprint,
+              "/Library/Keychains/System.keychain",
+            ],
+            { timeout: 10000 },
+          );
+        }
+      } finally {
+        await rm(directory, { recursive: true, force: true });
+      }
     }
   },
 );

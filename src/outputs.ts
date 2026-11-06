@@ -1,3 +1,4 @@
+import { verifiedProfile } from "./capabilities";
 export interface ExternalOutput {
   kind: "influxdb" | "experimental-prometheus-rw";
   endpoint: string;
@@ -49,7 +50,7 @@ export function externalEnvironment(
   return environment;
 }
 export function supportedExternalOutputs(version: string): string[] {
-  return /k6 v2\.3\./.test(version)
+  return verifiedProfile(version)
     ? ["influxdb", "experimental-prometheus-rw"]
     : [];
 }

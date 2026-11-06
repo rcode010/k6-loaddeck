@@ -44,7 +44,7 @@ LOADDECK_TEST_VSCODE=/absolute/path/to/code LOADDECK_TEST_K6=/absolute/path/to/k
 LOADDECK_TEST_VSCODE=/absolute/path/to/code LOADDECK_TEST_K6=/absolute/path/to/k6 npm run test:vscode:trust
 ```
 
-Missing optional dependencies produce explicit skips. OpenSSL fixtures skip on Windows. Rebuild before browser/desktop checks; they exercise bundled assets.
+Missing optional dependencies produce explicit skips. OpenSSL fixtures skip on Windows. On macOS, the TLS fixture requires `LOADDECK_TEST_SYSTEM_CA=1` on an isolated runner; it temporarily trusts its generated CA and removes that trust afterward. The CI macOS job opts in. Rebuild before browser/desktop checks; they exercise bundled assets.
 
 ## Compatibility boundaries
 

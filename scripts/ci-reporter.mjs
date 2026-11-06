@@ -8,7 +8,8 @@ const escape = (value) =>
 
 export default async function* report(source) {
   for await (const event of source) {
-    if (event.type === "test:pass") yield `PASS ${event.data.name}\n`;
+    if (event.type === "test:pass")
+      yield `${event.data.skip ? "SKIP" : event.data.todo ? "TODO" : "PASS"} ${event.data.name}\n`;
     else if (event.type === "test:fail") {
       const diagnostic = inspect(event.data.details.error, {
         depth: 8,
