@@ -660,6 +660,24 @@ function dashboard(): HTMLElement {
   for (const [key, value] of Object.entries(run.conditions ?? {}))
     metadata.append(element("p", `${key}: ${value}`));
   main.append(metadata);
+  if (run.outputs?.length) {
+    const outputs = element("section", undefined, "card");
+    outputs.append(element("h2", "Outputs"));
+    for (const output of run.outputs)
+      outputs.append(
+        element(
+          "p",
+          `${output.kind} · ${output.destination} · ${output.state}`,
+        ),
+      );
+    outputs.append(
+      element(
+        "p",
+        "External persistence is unverified unless an output error was reported. Local file status does not certify backend delivery.",
+      ),
+    );
+    main.append(outputs);
+  }
   if (run.thresholds.length) {
     const section = element("section", undefined, "card");
     section.append(element("h2", "Thresholds"));

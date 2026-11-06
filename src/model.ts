@@ -102,6 +102,11 @@ export interface ThresholdResult {
   delayAbortEval?: string;
 }
 export interface Run {
+  outputs?: {
+    kind: string;
+    destination: string;
+    state: "pending" | "written" | "partial" | "failed" | "unverified";
+  }[];
   schemaVersion: 1;
   id: string;
   name: string;

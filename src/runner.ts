@@ -6,15 +6,7 @@ import { credentialVariables } from "./integrations";
 import { datasetRows } from "./data";
 import { spawn, execFile, type ChildProcess } from "node:child_process";
 import { promisify } from "node:util";
-import {
-  mkdtemp,
-  writeFile,
-  readFile,
-  open,
-  rm,
-  chmod,
-} from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { writeFile, readFile, open, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { StringDecoder } from "node:string_decoder";
@@ -29,6 +21,7 @@ import type { Installation, QuickTest, Run } from "./model";
 import { activeRequests } from "./requests";
 import { protoMethods } from "./proto";
 import { supportsScenarioSelection } from "./scripts";
+import { runDirectory, recordEngine } from "./temporary";
 
 export async function discover(binary: string): Promise<Installation> {
   try {
@@ -107,6 +100,24 @@ export class K6Runner {
     ];
     const started = Date.now();
     const run: Run = {
+      outputs: config
+        ? [
+            ...(config.outputs ?? []).map((output) => ({
+              kind: output.format,
+              destination: path.basename(output.path),
+              state: "pending" as const,
+            })),
+            ...(config.externalOutput?.enabled
+              ? [
+                  {
+                    kind: config.externalOutput.kind,
+                    destination: safeTarget(config.externalOutput.endpoint),
+                    state: "pending" as const,
+                  },
+                ]
+              : []),
+          ]
+        : undefined,
       schemaVersion: 1,
       id: randomUUID(),
       name:
@@ -207,9 +218,10 @@ export class K6Runner {
     this.cancelled = false;
     onUpdate({ ...run });
     let directory: string | undefined;
+    const reservedOutputs = new Set<number>();
+    const failedOutputs = new Set<number>();
     try {
-      directory = await mkdtemp(path.join(tmpdir(), "loaddeck-"));
-      await chmod(directory, 0o700);
+      directory = await runDirectory();
       const metricsFile = path.join(directory, "points.json");
       const summaryFile = path.join(directory, "summary.json");
       const scriptFile = script ?? path.join(directory, "test.js");
@@ -347,11 +359,12 @@ export class K6Runner {
         args.push("--config", configFile);
       }
       args.push("--out", `json=${metricsFile}`);
-      for (const output of config?.outputs ?? []) {
+      for (const [index, output] of (config?.outputs ?? []).entries()) {
         if (!path.isAbsolute(output.path))
           throw new Error("Output paths must be absolute.");
         const file = await open(output.path, "wx", 0o600);
         await file.close();
+        reservedOutputs.add(index);
         args.push("--out", `${output.format}=${output.path}`);
       }
       if (config?.externalOutput?.enabled)
@@ -410,10 +423,23 @@ export class K6Runner {
       let logBytes = 0;
       const log = (chunk: string) => {
         if (
-          config?.externalOutput?.enabled &&
-          /level=error|connection refused|couldn.t flush/i.test(chunk)
-        )
+          !!run.outputs?.length &&
+          /level=error/i.test(chunk) &&
+          /output=|remote.write|influx|prometheus|flush/i.test(chunk)
+        ) {
           outputError = true;
+          for (const [index, output] of (run.outputs ?? []).entries()) {
+            if (
+              new RegExp(
+                output.kind === "experimental-prometheus-rw"
+                  ? "prometheus|remote.write"
+                  : output.kind,
+                "i",
+              ).test(chunk)
+            )
+              failedOutputs.add(index);
+          }
+        }
         const value = redactLog(chunk, secrets);
         run.logs.push(value);
         logBytes += Buffer.byteLength(value, "utf8");
@@ -440,6 +466,9 @@ export class K6Runner {
         stderrLogs = new LogBuffer(log);
       child.stdout?.on("data", (chunk: Buffer) => stdoutLogs.write(chunk));
       child.stderr?.on("data", (chunk: Buffer) => stderrLogs.write(chunk));
+      const ownership = child.pid
+        ? recordEngine(directory, child.pid).catch(() => undefined)
+        : Promise.resolve();
       const timer = setInterval(() => void poll(), 1000);
       const result = await new Promise<{ code: number | null; error?: Error }>(
         (resolve) => {
@@ -448,6 +477,7 @@ export class K6Runner {
         },
       );
       clearInterval(timer);
+      await ownership;
       stdoutLogs.end();
       stderrLogs.end();
       while (reading) await new Promise((resolve) => setTimeout(resolve, 10));
@@ -524,6 +554,24 @@ export class K6Runner {
         run.thresholds = reconcileThresholds(config, []);
       run.endedAt = new Date().toISOString();
       run.elapsedMs = Date.now() - started;
+      for (const [index, output] of (run.outputs ?? []).entries()) {
+        if (failedOutputs.has(index)) output.state = "failed";
+        else if (index < (config?.outputs?.length ?? 0)) {
+          try {
+            const size = reservedOutputs.has(index)
+              ? (await stat(config!.outputs![index]!.path)).size
+              : 0;
+            output.state =
+              size > 0
+                ? ["completed", "threshold_failed"].includes(run.state)
+                  ? "written"
+                  : "partial"
+                : "failed";
+          } catch {
+            output.state = "failed";
+          }
+        } else output.state = run.exitCode === null ? "failed" : "unverified";
+      }
       if (directory)
         await rm(directory, { recursive: true, force: true }).catch(
           () => undefined,

@@ -69,6 +69,7 @@ test(
         assert.equal(run.state, "completed", run.logs.join("\n"));
         assert.ok(run.metrics.requests! > 0);
         assert.ok(run.series.length);
+        assert.equal(run.outputs?.[0]?.state, "unverified");
       }
       assert.ok(writes > 0);
       await new Promise<void>((resolve) => backend.close(() => resolve()));
@@ -94,6 +95,7 @@ test(
       );
       assert.equal(failed.state, "execution_failed", failed.logs.join("\n"));
       assert.ok(failed.metrics.requests! > 0);
+      assert.equal(failed.outputs?.[0]?.state, "failed");
     } finally {
       backend.closeAllConnections();
       backend.close();

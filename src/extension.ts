@@ -22,6 +22,7 @@ import { savedScript } from "./saved-script";
 import { TestTemplates, type SavedTest } from "./templates";
 import { fingerprint } from "./definition";
 import { inspectScenarios, supportsScenarioSelection } from "./scripts";
+import { recoverTemporaryRuns } from "./temporary";
 
 class Navigation implements vscode.TreeDataProvider<vscode.TreeItem> {
   getTreeItem(item: vscode.TreeItem): vscode.TreeItem {
@@ -60,6 +61,14 @@ export function activate(context: vscode.ExtensionContext): void {
       await new Promise((resolve) => setTimeout(resolve, 50));
   };
   const output = vscode.window.createOutputChannel("LoadDeck");
+  void recoverTemporaryRuns()
+    .then((count) => {
+      if (count)
+        output.appendLine(
+          `Removed ${count} abandoned temporary run directories.`,
+        );
+    })
+    .catch(() => undefined);
   const settings = () => vscode.workspace.getConfiguration("loaddeck");
   const templateScope = fingerprint(context.storageUri?.toString() ?? "global");
   const templateIndex = `savedTests:${templateScope}`;
