@@ -79,5 +79,3 @@ npm run check
 npm run format:check
 npm run package
 ```
-
-See [Contributing](CONTRIBUTING.md), [Architecture](docs/ARCHITECTURE.md), and [Compatibility and verification](docs/READINESS.md) for development, testing, and current limitations.
