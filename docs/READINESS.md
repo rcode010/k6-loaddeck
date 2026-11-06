@@ -2,7 +2,7 @@
 
 LoadDeck 0.2 is a development preview. Core and advanced workflows have local integration coverage. Stable 1.0 remains gated on cross-platform and manual accessibility verification.
 
-The complete local suite passes **55 tests with zero failures and zero skips**, including real backend, browser, and 30-second streaming fixtures. Type checking, linting, formatting, bundling, VSIX packaging, desktop activation, the extended desktop workflow suite, and Restricted Mode checks pass.
+The complete local suite passes **56 tests with zero failures and zero skips**, including real backend, browser, and 30-second streaming fixtures. Type checking, linting, formatting, bundling, VSIX packaging, desktop activation, the extended desktop workflow suite, and Restricted Mode checks pass.
 
 ## Verified environment
 
