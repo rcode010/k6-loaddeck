@@ -1,115 +1,64 @@
-# Readiness and verification
+# Compatibility and verification
 
-LoadDeck is a buildable **0.1 development preview**. The P0 execution/history/comparison path and substantial GUI implementations in all eight feature families exist. **The complete specification is not yet implemented or signed off. This is not a feature-complete stable 1.0 release.**
+LoadDeck 0.2 is a development preview. Core and advanced workflows have local integration coverage. Stable 1.0 remains gated on cross-platform and manual accessibility verification.
 
-## Verified locally
+The complete local suite passes **55 tests with zero failures and zero skips**, including real backend, browser, and 30-second streaming fixtures. Type checking, linting, formatting, bundling, VSIX packaging, desktop activation, the extended desktop workflow suite, and Restricted Mode checks pass.
 
-Environment: Linux x64, Node.js 26.13.0, desktop VS Code 1.144.1, Grafana k6 v2.3.0, installed Chromium and OpenSSL. k6 was downloaded to `/tmp` for verification; no global binary was installed.
+## Verified environment
 
-The final full suite passed **37 tests with zero failures and zero skips**, including a real thirty-second streaming run and a Chromium accessibility audit. Type checking, current ESLint and the bundle build passed in the same run. Desktop VS Code checks additionally exercised two real runs, extension-host reload, persistent History and compatible-run comparison, scenario selection and matching chart axes. The desktop harness uses keyboard controls to avoid Electron nested-frame pointer-coordinate instability.
+Linux x64, Node.js 26.13.0, VS Code 1.144.1, Grafana k6 2.3.0, Chromium, and OpenSSL. InfluxDB 1.13.2 and Prometheus 3.16.0 run as temporary loopback-only processes. Test binaries and data are isolated; no global service installation is required.
 
-Real loopback fixtures cover:
+| Area                 | Automated evidence                                                                                                                                               |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Execution            | Real GET/POST/JSON, five presets, all six executors, cancellation, repeated Stop, subsequent runs, and sustained streaming                                       |
+| Scenarios            | Staggered independent HTTP/WebSocket requests, authentication, data, environment, tags, checks, and scoped results                                               |
+| Assertions           | Scoped checks, status lists, regex, UTF-8/UTF-16 semantics, own-property JSON paths, special keys, decimal percentiles, delayed aborts, and unknown evaluations  |
+| Protocols            | HTTP/2, WebSocket receive deadlines, gRPC schema discovery/unary calls, and secure HTTP/WebSocket/gRPC client certificates                                       |
+| Authentication       | Basic, Digest, NTLMv2 password proofs, Bearer, API keys, cookies, OAuth client credentials, and k6 secret-source console redaction                               |
+| Data and saved tests | Type overrides, exhaustion matrix, portable dependencies, protected template reopening/deletion, and script change detection                                     |
+| History/comparison   | Atomic storage, corruption recovery, retention, interrupted records, scenario selection, shared scales, missing/zero values, and protocol exports                |
+| Outputs              | Concurrent internal/native collection, queryable InfluxDB/Prometheus persistence, refused-backend failures, and delivery status                                  |
+| Browser UI           | Request/scenario editing, guided bindings, executor state, History/Compare/Saved tests, themes, narrow layouts, keyboard focus, forced colors, and axe WCAG A/AA |
+| Desktop VS Code      | Activation, real runs, reload, History/Compare, Stop, failures, protected credentials/templates, and Restricted Mode denial before requests                      |
+| Resources            | Bounded logs/buckets/stream reads, normal cleanup, and conservative abandoned-run recovery                                                                       |
 
-- GET and POST/JSON, authoritative averages/p95/p99, checks, passing and failing thresholds, exit code 99, cancellation and live updates.
-- Thirty seconds of ongoing metric collection with bounded chart buckets.
-- History retention, a newly constructed storage service reopening results, serialized writes, interrupted-run marking and preservation of damaged files.
-- Comparison type/script eligibility, changed conditions, zero baselines, missing values and direction-aware interpretation.
-- All six built-in executors, staggered scenarios, scoped check groups/tags, allowed-status lists, regular expressions, case-insensitive headers, UTF-16 length versus UTF-8 byte size, and scenario-filtered thresholds.
-- Correct k6 metric types, decimal percentiles, preserved JSON-plus-builder rules, three-second abort evaluation delay, early-abort observation metadata and unevaluated thresholds when no summary exists.
-- Scoped comparison without global-percentile substitution, identical chart axes, exact stored bucket widths, bounded per-scenario series, native protocol comparison rows and history reopening of these records.
-- Silent WebSocket content assertions fail even for patterns that could match an empty string; an actual empty message remains distinguishable from silence. Zero-length HTTP response bounds accept an actual empty response.
-- Special JSON, header, tag and check names remain data; inherited JSON properties cannot falsely satisfy a response check. A real Unicode console flood verifies the total 64 KiB retained-log budget.
-- WebSocket echo and unary gRPC request/response assertions with protocol metrics.
-- Basic, Digest, Bearer, API-key, cookie and OAuth client-credentials flows; secrets absent from generated source and stored run objects in the tested fixtures.
-- JSON/CSV datasets, changing request values, SharedArray initialization, form encoding, multipart upload, protected URL query parameters and simultaneous native JSON/CSV outputs.
-- HTTP/2 negotiation and client-certificate authentication against a temporary local CA, with certificate verification enabled.
-- InfluxDB v1-compatible and Prometheus remote-write wire fixtures, simultaneous internal collection and a refused backend surfacing as execution failure. These are controlled wire fixtures, not a deployed InfluxDB/Prometheus installation.
-- The real bundled webview: URL submission, executor and protocol controls, matching check choices, missing binary state, History selection, Compare navigation, dark/light narrow layouts, no narrow-page overflow and an axe WCAG A/AA audit.
-- A real isolated VS Code Extension Development Host: activation, required command registration, opening the webview, History/Compare navigation and installation checking. It exited successfully. A separate keyboard-driven desktop test exercised URL submission, real results, rerun, host reload, History selection and comparison.
+Fixtures target loopback only. Storage-provider and browser-message test doubles are confined to explicit fixtures; performance measurements come from k6.
 
-## Commands
+## Run the checks
 
 ```sh
 npm run check
-LOADDECK_TEST_LONG=1 LOADDECK_TEST_BROWSER=/usr/bin/chromium LOADDECK_TEST_K6=/tmp/k6-v2.3.0-linux-amd64/k6 npm run check
-LOADDECK_TEST_VSCODE=/usr/share/code/code npm run test:host
-LOADDECK_TEST_VSCODE=/usr/share/code/code LOADDECK_TEST_K6=/tmp/k6-v2.3.0-linux-amd64/k6 npm run test:vscode:ui
 npm run format:check
 npm run package
 ```
 
-The test runner prints explicit skips when optional binary/browser/long-run variables are absent. CI is configured for Linux, macOS and Windows with k6 v2.3.0; no remote CI workflow has been executed or pushed during this implementation.
+For real execution, browser, and sustained-stream coverage, set `LOADDECK_TEST_K6` to the k6 executable, `LOADDECK_TEST_BROWSER` to Chromium, and `LOADDECK_TEST_LONG=1` before `npm run check`.
 
-## Stable release gates still open
+Add `LOADDECK_TEST_INFLUXDB` and `LOADDECK_TEST_PROMETHEUS` with backend executable paths for the persistence test. Their temporary data is removed afterward.
 
-| Family         | Implemented and locally exercised                                                                                                                                    | Remaining before family sign-off                                                                                                          |
-| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| Scenarios      | Named/enabled scenarios, independent HTTP/WebSocket/gRPC request/auth/data/check settings, nonsecret environment, staggered scheduling, tags and scoped results      | Broader mixed-protocol compatibility verification                                                                                         |
-| Executors      | Six typed forms, validation, real execution, stage editing, arrival-rate sleep suppression, dropped-iteration display                                                | Cross-platform execution and broader saturation/cleanup verification                                                                      |
-| Thresholds     | Metric-aware rules, observed metric catalog, decimal percentiles, preserved combined rules, tag scopes, delayed abort, observed values and unevaluated states        | Custom metric emission remains script-first; broader mixed-workload abort coverage and custom-metric authoring are not signed off         |
-| Checks         | Status/lists, duration, body text/regex/nonempty/UTF-16 length/UTF-8 size, JSON/header assertions, WebSocket content/regex, scoped check tags/groups and gRPC fields | Full check-breakdown coverage for user-authored scripts and independent request workflows; broader protocol-specific receive expectations |
-| Protocols      | HTTP, negotiated HTTP/2, WebSocket exchange and unary gRPC with file/import controls                                                                                 | Broader binary/platform compatibility profiles and streaming operations (script-first)                                                    |
-| Authentication | Basic, Digest, Bearer, header/query API keys, cookie, OAuth client credentials and HTTP mTLS                                                                         | Broader external credential-provider and enterprise authentication verification                                                           |
-| Data           | JSON/CSV picker, row/column preview, runtime variables, templating, four row strategies, repeat/fail policy, verified form/multipart request support                 | Broader remote-host and external dependency compatibility verification                                                                    |
-| Outputs        | Concurrent internal/native JSON/CSV, normalized JSON/CSV, self-contained HTML, opt-in version-profile external adapters, refused-backend diagnostics                 | Real deployed backend verification and more binary capability profiles                                                                    |
+Desktop checks use an isolated VS Code profile:
 
-Other open acceptance gates:
+```sh
+LOADDECK_TEST_VSCODE=/absolute/path/to/code npm run test:host
+LOADDECK_TEST_VSCODE=/absolute/path/to/code LOADDECK_TEST_K6=/absolute/path/to/k6 npm run test:vscode:ui
+LOADDECK_TEST_VSCODE=/absolute/path/to/code LOADDECK_TEST_K6=/absolute/path/to/k6 npm run test:vscode:trust
+```
 
-- Additional desktop VS Code automation for Stop, failure states, Restricted Mode and SecretStorage runtime injection. URL submission, results, rerun, reload persistence, History, scenario selection and common chart scales have passed in the real host.
-- Manual screen-reader, keyboard, light/dark/high-contrast and remote-host verification. The browser harness audit does not prove accessibility in every VS Code theme.
-- macOS/Windows execution, cancellation/process-tree cleanup and packaging verification. The CI definition is not evidence of those checks passing.
-- Broader security fuzzing for payloads, unusual URL encodings, very large output and exceptional process cleanup. No-comments enforcement, split-credential log buffering, actual retained-byte limits and special JSON properties have automated coverage.
-- Existing scripts retain path/content identity and support named-scenario selection on the verified k6 2.3.x profile without changing load options or source. Arbitrary custom scripts retain observed metrics without authoritative final percentiles; richer summary negotiation remains a compatibility gate.
-- Sensitive request settings stay out of run history. Explicit Saved Tests use VS Code SecretStorage; runs started from those immutable templates can rerun/edit through the protected template reference. Deleting a template leaves its run history intact.
-- More history sorting options, broader metric help text and saved-test organization. Comparison now supports shared chart scales, scenario selection, native protocol rows and explicit missing scoped data. Older records without exact bucket widths retain summary rates but cannot show trustworthy throughput curves.
-- Temporary recovery runs on activation for marked directories older than 24 hours when both recorded host and engine PIDs are gone. Unmarked, recent, active and incomplete-ownership directories are preserved. Normal completion/cancellation/failure cleanup remains immediate.
+Missing optional dependencies produce explicit skips. OpenSSL fixtures skip on Windows. Rebuild before browser/desktop checks; they exercise bundled assets.
 
-## Packaging and maintainer decisions
+## Compatibility boundaries
 
-Local `vsce package` succeeds without pushing or publishing. Publisher and license have not been selected in the repository. VSCE emits `Publisher="undefined"` when the publisher is absent; the resulting VSIX is a **development packaging check**, not a Marketplace-ready artifact. Use F5 for development. The maintainer must choose a real publisher ID and license before distribution; no identity or legal terms have been invented.
+- Generated tests isolate ambient k6 options. Existing scripts preserve source, settings, imports, setup, teardown, and environment behavior.
+- Scenario selection, external adapters, and automatic secret-source delivery use the verified k6 2.3.x profile. Other binaries retain script execution and environment fallback.
+- Custom scripts may lack authoritative final percentiles. Missing scoped data stays unavailable; global percentiles are not substituted.
+- Raw JSON/CSV can contain sensitive tags. External persistence stays unverified unless output reports failure; the extension does not query backends to certify delivery.
+- Saved configurations and original-script locations use VS Code SecretStorage. History and exports omit those raw configurations.
+- Normal cleanup is immediate. Recovery removes marked directories older than 24 hours only when both recorded host and engine PIDs are gone. Unmarked, recent, active, or incomplete-ownership directories are preserved.
 
-Source maps and all runtime assets are bundled locally. Test-host code, source, node_modules and development fixtures are excluded from the VSIX. No release, tag, remote change, push or publication has been made.
+## Before stable 1.0
 
-## Local commit milestones
+- Execute the CI matrix and desktop/process-cleanup checks on macOS and Windows. A workflow definition is not a passing run.
+- Complete manual screen-reader, keyboard, theme, and remote-host verification. Automated audits do not replace assistive-technology testing.
+- Confirm ownership of the configured `rcode010` publisher ID and complete Marketplace registration before publication.
 
-- `916fd41` — validated k6 execution and metrics core; typecheck, lint, seven unit tests and bundle build passed.
-- `fff886c` — dashboard, persistent history and comparison; real GET/POST, threshold/cancellation and storage reopening passed.
-- `acc149a` — scenario/executor/assertion builders; all six real executor fixtures and staggered scenarios passed.
-- `46e319e` — protocol, protected authentication, dataset and output workflows; real protocol/auth/data fixtures passed.
-- `d423b38` — output hardening, Digest, protected URL values, form/multipart requests and concrete comparison conditions; real fixtures passed.
-- `ce6592d` — bounded streamed-log redaction and protected runtime variables for existing scripts; unit/security checks passed.
-- `610d5e0` — correct live protocol counter totals, observed zeros and safe workload draft restoration; real integration/browser checks passed.
-- `bfb3c4f` — repeated cancellation and a new run after cancellation; real lifecycle fixture passed.
-- `fe593bf` — maintained ESLint 10 toolchain; lint and type checking passed.
-- `c9ae10e` — per-host authorization keys and bounded shutdown cleanup; full 24-test verification passed.
-
-The following continuation milestones are also verified locally:
-
-- `a92ea4a` — allowed-status lists, regex, UTF-8 response size, grouped/scoped checks and real observed breakdowns.
-- `1cebbe6` — metric-aware thresholds, real metric catalogs, decimal percentiles, delayed abort outcomes and explicit unevaluated results.
-- `7ce1b33` — bounded scenario series, accurate bucket widths, scenario comparison, native protocol rows and common chart axes.
-- `257124b` — reject sub-second quick/constant workloads before k6 launch.
-- `1d3dc79` — fail message assertions when no message arrives; preserve zero-length response semantics.
-- `8ee0834` — preserve special JSON/check names and reject inherited response paths.
-- `7f43680` — preserve special scenario/check tags and runtime credential-header names.
-- `8ac6a39` — enforce the actual total UTF-8 log-byte limit.
-
-Verification used `npm run check` with the k6, browser and long-run fixture variables enabled: **37 passed, zero failures, zero skips**. The desktop keyboard suite additionally passed real runs, reload persistence, scenario comparison and shared scales. The final documentation commit records the associated harness and screenshots. No remote CI, macOS or Windows execution is implied by these local results.
-
-Independent-scenario continuation: real mixed HTTP POST/WebSocket execution passed with isolated authentication, dataset rows, scenario environment and scoped metrics. The Chromium builder test verifies independent request editing. Sensitive scenario configurations are omitted from History. Named WebSocket/gRPC scenarios now pass the same target validation as ordinary requests; unsupported WebSocket Digest auth is rejected.
-
-Workload continuation: all five preset schedules passed real short-duration k6 fixtures. Executor forms retain independent numeric fields and ramp stages across switches, verified in Chromium. The planned timeline shows staggered schedules; load confirmation estimates concurrent VUs, normalized arrival rates and iteration budgets including graceful-stop overlap.
-
-Dataset continuation: schema/type overrides, redacted schema previews and guided URL/body/message binding insertion are implemented. Real CSV fixtures verify number/boolean overrides and all four row strategies under repeat/fail policies. Exhaustion with fail aborts k6 instead of throwing an iteration error that could still exit zero.
-
-Protocol continuation: schema-derived unary gRPC method discovery and preflight validation, HTTP redirect/timeout controls, gRPC connect/call timeouts and scheduled WebSocket messages with receive deadlines passed real fixtures. Client certificates passed real secure WebSocket and gRPC fixtures in addition to HTTP/2, using a temporary trusted CA with verification enabled.
-
-NTLM continuation: the HTTP adapter passed a real k6 NTLMv2 handshake against a loopback fixture verifying the password proof. Enterprise domain-controller compatibility remains environment-dependent. Inapplicable Digest/NTLM protocol combinations are disabled/rejected.
-
-Credential continuation: generated tests on the verified k6 2.3.x profile use the built-in file secret source for eligible single-line values. The source file is private and transient; original credential variables are removed from the child environment for those values. PEM/multiline values, saved scripts and unverified binary profiles use explicit environment fallback. A real fixture verifies both authentication and k6 automatic console redaction. Stored values can be updated/deleted through Manage Runtime Credentials.
-
-Saved-test continuation: protected configurations support save, edit, run, delete and history rerun via immutable template references. Metadata contains names/IDs only; automated provider tests verify reopening, workspace isolation and deletion. Saved scripts copy datasets/uploads/proto imports beside the script with relative paths. A real mixed HTTP/gRPC script still passes after deleting all original dependency files.
-
-Existing-script continuation: Run Selected Script Scenarios inspects named options only after workspace trust and script authorization, then passes the official --scenario flag on the verified profile. A real fixture verifies exact selected/unselected iteration totals, unchanged source and different-condition comparison warnings. Inspection errors do not expose potentially sensitive script diagnostics.
-
-Reliability continuation: output records distinguish written/partial native files, reported output failures and unverified external persistence. Actual output error messages trigger failure without substituting backend delivery claims for observations. Recovery tests preserve active/unmarked directories and remove only marked dead-process runs. Existing real cancellation, output and auth fixtures pass.
+Local packaging and verification do not publish the extension or create a release.

@@ -2,7 +2,7 @@
   "name": "k6-loaddeck",
   "displayName": "LoadDeck \u2014 k6 Performance Testing",
   "description": "GUI-first local performance testing powered by Grafana k6.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "engines": {
     "vscode": "^1.96.0"
@@ -33,10 +33,11 @@
     "format:check": "prettier --check .",
     "test": "tsx --test test/*.test.ts",
     "check": "npm run typecheck && npm run lint && npm run build && npm test",
-    "package": "vsce package --skip-license --no-dependencies",
+    "package": "vsce package --no-dependencies",
     "vscode:prepublish": "npm run build",
     "test:host": "node scripts/test-host.mjs",
-    "test:vscode:ui": "node scripts/test-vscode-ui.mjs"
+    "test:vscode:ui": "node scripts/test-vscode-ui.mjs",
+    "test:vscode:trust": "node scripts/test-vscode-ui.mjs --restricted"
   },
   "contributes": {
     "commands": [
@@ -206,5 +207,21 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/rcode010/k6-loaddeck.git"
-  }
+  },
+  "publisher": "rcode010",
+  "author": "rcode010",
+  "license": "MIT",
+  "pricing": "Free",
+  "icon": "media/icon.png",
+  "homepage": "https://github.com/rcode010/k6-loaddeck#readme",
+  "bugs": {
+    "url": "https://github.com/rcode010/k6-loaddeck/issues"
+  },
+  "keywords": [
+    "k6",
+    "performance",
+    "load-testing",
+    "api",
+    "testing"
+  ]
 }

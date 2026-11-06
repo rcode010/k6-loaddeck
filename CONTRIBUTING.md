@@ -1,11 +1,36 @@
 # Contributing
 
-Install Node.js 24 or newer, then run `npm ci` and `npm run check`. Use F5 in VS Code to launch the extension. Install k6 in that extension host environment.
+## Development setup
 
-Keep changes focused and preserve existing repository history. Use clear Conventional Commit subjects. Before committing, run type checking, lint, relevant unit/integration tests and the bundle build. Run `npm run format` for consistent formatting. Source code and generated k6 scripts must contain no comments; explanations belong in documentation and descriptive names.
+Install Node.js 24 or newer and Grafana k6 in the VS Code extension host environment.
 
-Real execution tests require `LOADDECK_TEST_K6=/absolute/path/to/k6`. Browser tests additionally require `LOADDECK_TEST_BROWSER=/absolute/path/to/chromium` and a prior `npm run build`. Fixtures target loopback only. Do not run load tests against third-party services to verify a change.
+```sh
+npm ci
+npm run check
+```
 
-Add meaningful tests for input validation, process lifecycle, metrics, persistence, comparison or secret handling when those behaviors change. Keep fake data confined to explicit automated test fixtures. Never claim an integration passed if it was skipped.
+Open the repository in desktop VS Code and press F5 with **Run LoadDeck**. Browser and desktop tests require a prior build. See [Compatibility and verification](docs/READINESS.md) for dependencies and commands.
 
-A pull request should describe the problem, resulting behavior, verification commands and remaining limitations. Do not publish, release, push changes or alter repository settings without maintainer permission. The stable release gates in `docs/READINESS.md` must pass before version 1.0.
+## Changes and tests
+
+Keep changes focused, use descriptive names and strong types, and place explanations in documentation. Source and generated scripts follow the repository's comment-free convention. Use Conventional Commit subjects and preserve existing authorship.
+
+Add meaningful coverage for validation, process lifecycle, metrics, persistence, comparison, and credentials. Integration fixtures target loopback only. Keep test doubles in explicit fixtures and report skipped checks accurately.
+
+Before submitting:
+
+```sh
+npm run check
+npm run format:check
+npm run package
+```
+
+A pull request should explain the concrete problem, resulting behavior, relevant verification, and limitations. Include actual screenshots for visible changes.
+
+## Packaging and releases
+
+`npm run package` creates a local VSIX without publishing. LoadDeck is MIT licensed and marked free in Marketplace metadata.
+
+The publisher ID is `rcode010`, matching the repository maintainer. Register that ID or confirm its ownership through [Marketplace publisher management](https://marketplace.visualstudio.com/manage) before publishing. Follow the [VS Code publishing guide](https://code.visualstudio.com/api/working-with-extensions/publishing-extension) for account setup and supported authentication.
+
+Stable 1.0 requires the checks in [Compatibility and verification](docs/READINESS.md). Publishing, tagging releases, pushing, and changing repository settings require maintainer authorization.

@@ -31,3 +31,13 @@ Threshold results use a nullable outcome: unknown evaluations are not failures o
 Scoped chart series retain actual bucket widths in seconds. Older records without that metadata still provide their saved summary rates and latency series; throughput curves are unavailable instead of being fabricated from gaps between points. Per-scenario averages/counters remain observed metrics, and unavailable global percentiles are never substituted. Paired charts share both elapsed-time and value scales. Native WebSocket/gRPC counters remain factual context rather than automatic quality scores.
 
 Generated JSON is parsed as data, JSON paths require own properties, and special property names are preserved through headers, check names and tag serialization. WebSocket content assertions record a real failed k6 check if no message arrives before the session closes. They still affect the process outcome only through an explicit checks threshold.
+
+Independent scenario request settings are resolved in `src/requests.ts`; validation, credential discovery, process authorization and generation use the same resolved workflows. `src/load.ts` provides conservative executor-aware capacity estimates, while the webview timeline shows desired schedules separately from measurements.
+
+`src/data.ts` validates schema overrides and supplies the generated SharedArray conversion helper. `src/proto.ts` discovers declared unary methods. `src/saved-script.ts` copies bounded dependencies into private asset directories and generates relative references for standalone scripts.
+
+`src/templates.ts` stores explicitly saved configurations in SecretStorage with a metadata-only index. `src/script-reference.ts` protects original script locations, detects source changes before rerun and follows history retention. Run history contains template/reference IDs, not those protected configurations.
+
+On the verified binary profile, eligible single-line credentials use the k6 file secret source. Temporary credential files are private and removed with run artifacts; certificates and other unsupported values retain explicit environment fallback. `src/temporary.ts` performs conservative dead-process recovery using ownership markers.
+
+The build bundles runtime schema-loading dependencies and includes their license notices in the VSIX. Browser assets remain local; the extension has no required network service.
