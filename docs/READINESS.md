@@ -6,7 +6,7 @@ LoadDeck is a buildable **0.1 development preview**. The P0 execution/history/co
 
 Environment: Linux x64, Node.js 26.13.0, desktop VS Code 1.144.1, Grafana k6 v2.3.0, installed Chromium and OpenSSL. k6 was downloaded to `/tmp` for verification; no global binary was installed.
 
-The final full suite passed **24 tests with zero failures and zero skips**, including a real thirty-second streaming run and a Chromium accessibility audit. Type checking, current ESLint and the bundle build passed in the same run. Desktop VS Code checks additionally exercised two real runs, extension-host reload, persistent History and compatible-run comparison. The desktop harness uses keyboard controls to avoid Electron nested-frame pointer-coordinate instability.
+The final full suite passed **37 tests with zero failures and zero skips**, including a real thirty-second streaming run and a Chromium accessibility audit. Type checking, current ESLint and the bundle build passed in the same run. Desktop VS Code checks additionally exercised two real runs, extension-host reload, persistent History and compatible-run comparison, scenario selection and matching chart axes. The desktop harness uses keyboard controls to avoid Electron nested-frame pointer-coordinate instability.
 
 Real loopback fixtures cover:
 
@@ -14,7 +14,11 @@ Real loopback fixtures cover:
 - Thirty seconds of ongoing metric collection with bounded chart buckets.
 - History retention, a newly constructed storage service reopening results, serialized writes, interrupted-run marking and preservation of damaged files.
 - Comparison type/script eligibility, changed conditions, zero baselines, missing values and direction-aware interpretation.
-- All six built-in executors, staggered scenarios, JSON checks and scenario-filtered thresholds.
+- All six built-in executors, staggered scenarios, scoped check groups/tags, allowed-status lists, regular expressions, case-insensitive headers, UTF-16 length versus UTF-8 byte size, and scenario-filtered thresholds.
+- Correct k6 metric types, decimal percentiles, preserved JSON-plus-builder rules, three-second abort evaluation delay, early-abort observation metadata and unevaluated thresholds when no summary exists.
+- Scoped comparison without global-percentile substitution, identical chart axes, exact stored bucket widths, bounded per-scenario series, native protocol comparison rows and history reopening of these records.
+- Silent WebSocket content assertions fail even for patterns that could match an empty string; an actual empty message remains distinguishable from silence. Zero-length HTTP response bounds accept an actual empty response.
+- Special JSON, header, tag and check names remain data; inherited JSON properties cannot falsely satisfy a response check. A real Unicode console flood verifies the total 64 KiB retained-log budget.
 - WebSocket echo and unary gRPC request/response assertions with protocol metrics.
 - Basic, Digest, Bearer, API-key, cookie and OAuth client-credentials flows; secrets absent from generated source and stored run objects in the tested fixtures.
 - JSON/CSV datasets, changing request values, SharedArray initialization, form encoding, multipart upload, protected URL query parameters and simultaneous native JSON/CSV outputs.
@@ -40,7 +44,7 @@ The test runner prints explicit skips when optional binary/browser/long-run vari
 
 | Family         | Implemented and locally exercised                                                                                                                                    | Remaining before family sign-off                                                                                                                                                                         |
 | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Scenarios      | Named/enabled scenarios, separate exported functions, target overrides, staggered scheduling, tags, observed scenario filters                                        | Per-scenario request/protocol/auth/data workflows, per-scenario nonsecret environment editor, richer schedule visualization and scenario-specific comparison selectors                                   |
+| Scenarios      | Named/enabled scenarios, separate exported functions, target overrides, staggered scheduling, tags, observed scenario filters                                        | Per-scenario request/protocol/auth/data workflows, per-scenario nonsecret environment editor and richer schedule visualization                                                                           |
 | Executors      | Six typed forms, validation, real execution, stage editing, arrival-rate sleep suppression, dropped-iteration display                                                | Stress/Spike/Soak preset integration matrix, exhaustive dangerous-load estimation, preserving independent editor state per executor                                                                      |
 | Thresholds     | Metric-aware rules, observed metric catalog, decimal percentiles, preserved combined rules, tag scopes, delayed abort, observed values and unevaluated states        | Custom metric emission remains script-first; broader mixed-workload abort coverage and custom-metric authoring are not signed off                                                                        |
 | Checks         | Status/lists, duration, body text/regex/nonempty/UTF-16 length/UTF-8 size, JSON/header assertions, WebSocket content/regex, scoped check tags/groups and gRPC fields | Full check-breakdown coverage for user-authored scripts and independent request workflows; broader protocol-specific receive expectations                                                                |
@@ -51,10 +55,10 @@ The test runner prints explicit skips when optional binary/browser/long-run vari
 
 Other open acceptance gates:
 
-- Additional desktop VS Code automation for Stop, failure states, Restricted Mode and SecretStorage runtime injection. URL submission, results, rerun, reload persistence, History and Compare have passed in the real host.
+- Additional desktop VS Code automation for Stop, failure states, Restricted Mode and SecretStorage runtime injection. URL submission, results, rerun, reload persistence, History, scenario selection and common chart scales have passed in the real host.
 - Manual screen-reader, keyboard, light/dark/high-contrast and remote-host verification. The browser harness audit does not prove accessibility in every VS Code theme.
 - macOS/Windows execution, cancellation/process-tree cleanup and packaging verification. The CI definition is not evidence of those checks passing.
-- Broader security fuzzing for payloads, unusual URL encodings, very large output and exceptional process cleanup. No-comments enforcement and split-credential log buffering have automated coverage.
+- Broader security fuzzing for payloads, unusual URL encodings, very large output and exceptional process cleanup. No-comments enforcement, split-credential log buffering, actual retained-byte limits and special JSON properties have automated coverage.
 - Rich existing-script identity management, summary capability negotiation and safe rerun after script changes. Arbitrary custom scripts currently retain observed metrics without authoritative final percentiles; scripts are never rewritten.
 - Rerun/edit from sensitive historical configurations currently requires re-entry rather than retaining raw headers, bodies or URL queries. This favors privacy but does not satisfy the full saved-template workflow yet.
 - More history sorting options, broader metric help text and saved-test organization. Comparison now supports shared chart scales, scenario selection, native protocol rows and explicit missing scoped data. Older records without exact bucket widths retain summary rates but cannot show trustworthy throughput curves.
@@ -79,4 +83,15 @@ Source maps and all runtime assets are bundled locally. Test-host code, source, 
 - `fe593bf` — maintained ESLint 10 toolchain; lint and type checking passed.
 - `c9ae10e` — per-host authorization keys and bounded shutdown cleanup; full 24-test verification passed.
 
-Further commits record output hardening, request expansion and verification artifacts. See local Git history for their exact subjects and hashes.
+The following continuation milestones are also verified locally:
+
+- `a92ea4a` — allowed-status lists, regex, UTF-8 response size, grouped/scoped checks and real observed breakdowns.
+- `1cebbe6` — metric-aware thresholds, real metric catalogs, decimal percentiles, delayed abort outcomes and explicit unevaluated results.
+- `7ce1b33` — bounded scenario series, accurate bucket widths, scenario comparison, native protocol rows and common chart axes.
+- `257124b` — reject sub-second quick/constant workloads before k6 launch.
+- `1d3dc79` — fail message assertions when no message arrives; preserve zero-length response semantics.
+- `8ee0834` — preserve special JSON/check names and reject inherited response paths.
+- `7f43680` — preserve special scenario/check tags and runtime credential-header names.
+- `8ac6a39` — enforce the actual total UTF-8 log-byte limit.
+
+Verification used `npm run check` with the k6, browser and long-run fixture variables enabled: **37 passed, zero failures, zero skips**. The desktop keyboard suite additionally passed real runs, reload persistence, scenario comparison and shared scales. The final documentation commit records the associated harness and screenshots. No remote CI, macOS or Windows execution is implied by these local results.

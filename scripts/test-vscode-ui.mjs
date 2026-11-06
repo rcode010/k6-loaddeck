@@ -84,6 +84,7 @@ try {
   }
   assert.ok(page, "VS Code workbench page exists");
   page.setDefaultTimeout(15000);
+  await page.setViewportSize({ width: 1440, height: 1000 });
   await page.locator(".monaco-workbench").waitFor();
   await page.keyboard.press("Control+Shift+P");
   await page
@@ -133,8 +134,9 @@ try {
     .getByText("Completed · no thresholds", { exact: true })
     .waitFor({ timeout: 20000 });
   await mkdir("docs/screenshots", { recursive: true });
-  await frame
-    .locator("body")
+  await frame.evaluate(() => globalThis.scrollTo(0, 0));
+  await page
+    .locator(".part.editor")
     .screenshot({ path: "docs/screenshots/vscode-results.png" });
   await page.keyboard.press("Control+Shift+P");
   await page
@@ -177,8 +179,37 @@ try {
   }
   await activateButton(frame, "Compare Selected (2/2)");
   await frame.getByText("Comparable conditions.", { exact: false }).waitFor();
+  await frame
+    .getByLabel("Comparison scenario", { exact: true })
+    .selectOption("main");
+  assert.equal(
+    await frame
+      .getByRole("row")
+      .filter({ hasText: "p95 latency" })
+      .locator("td")
+      .nth(1)
+      .innerText(),
+    "N/A",
+  );
+  await frame
+    .getByLabel("Comparison chart", { exact: true })
+    .selectOption("requests");
+  const charts = frame.locator(".chart svg");
+  assert.equal(await charts.count(), 2);
+  assert.equal(
+    await charts.nth(0).getAttribute("data-axis-max"),
+    await charts.nth(1).getAttribute("data-axis-max"),
+  );
+  assert.equal(
+    await charts.nth(0).getAttribute("data-axis-end"),
+    await charts.nth(1).getAttribute("data-axis-end"),
+  );
+  await frame.evaluate(() => globalThis.scrollTo(0, 0));
+  await page
+    .locator(".part.editor")
+    .screenshot({ path: "docs/screenshots/vscode-comparison.png" });
   console.log(
-    "Actual VS Code URL submission, two real k6 runs, reload persistence, History and Compare passed.",
+    "Actual VS Code real runs, reload persistence, History, scoped comparison and shared chart scales passed.",
   );
 } catch (error) {
   await mkdir(".test-artifacts", { recursive: true });

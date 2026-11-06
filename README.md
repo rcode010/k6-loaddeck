@@ -22,7 +22,7 @@ Use `loaddeck.binaryPath` if k6 is outside the extension host's PATH. **LoadDeck
 - **New test:** GET, POST, PUT, PATCH, DELETE, HEAD and OPTIONS; headers, JSON, text, form-encoded or multipart bodies, expected status, think time and thresholds.
 - **Dashboard:** live observed counts, average latency, throughput, failures, VUs, scenario filters, logs and Stop. Final percentiles come from k6's summary for generated tests. Missing measurements display N/A.
 - **History:** compact local results, filters, dates, reopening, rerun where safely reproducible, deletion and retention. The default is fifty runs.
-- **Compare:** choose exactly two same-type runs. Differences in target, workload, requests or acceptance criteria produce a warning and suppress performance verdicts. A zero baseline has no relative percentage.
+- **Compare:** choose exactly two same-type runs and optionally a common scenario. Charts share identical elapsed-time and value scales. Differences in target, workload or acceptance criteria suppress verdicts, as do incomplete/aborted observations. Missing scoped percentiles remain N/A; zero baselines have no relative percentage. Native WebSocket/gRPC measurements are compared with their own units.
 - **Advanced builder:** independently scheduled scenarios, all six executors, checks, scoped thresholds, HTTP/2 negotiation, WebSocket and unary gRPC, protected authentication references, JSON/CSV datasets and native outputs.
 - **Scripts:** preview or save standalone JavaScript; run existing scripts through the palette or Explorer. Existing source and its original options are preserved. Custom scripts do not provide authoritative final percentiles unless a compatible summary adapter is available; observed metrics remain usable.
 - **Exports:** normalized result JSON, CSV and standalone HTML reports differ from granular native k6 JSON/CSV output files.
@@ -30,6 +30,16 @@ Use `loaddeck.binaryPath` if k6 is outside the extension host's PATH. **LoadDeck
 ![Real result in the desktop VS Code webview](docs/screenshots/vscode-results.png)
 
 Home screenshots use the actual bundled webview in its browser test harness. The results screenshot comes from the desktop VS Code webview and contains measurements from a real loopback k6 run.
+
+![Scenario comparison in the desktop VS Code editor](docs/screenshots/vscode-comparison.png)
+
+## Checks and thresholds
+
+Advanced checks support allowed HTTP status lists, response text/regex, JSON paths, case-insensitive headers, UTF-16 string length and UTF-8 encoded text size. Group names, nonsecret tags and scenario filters organize their results. UTF-8 size measures decoded response text, not compressed network-transfer bytes. A WebSocket content check fails when no message arrives before the configured session closes; an actual empty message can still match an empty-string pattern.
+
+Threshold controls offer only valid aggregations for each metric type. Rate values are ratios (`0.01` means 1%); timing values use milliseconds. Decimal percentiles are supported. Observed metric definitions are retained in History and can inform custom rules. Selecting a custom metric name does not create measurements: the script must actually emit that metric.
+
+JSON-form thresholds and visual rules are combined. Use **Abort on failure** and its evaluation delay to stop early. Aborted observations stay visibly incomplete in History and Compare. A missing evaluation is shown as **Not evaluated**; a normal run without thresholds is never presented as having passed an SLA. Checks alone do not change k6's exit status—add a `checks` threshold to enforce them.
 
 ## Credentials and data
 
