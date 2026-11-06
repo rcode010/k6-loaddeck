@@ -7,7 +7,7 @@ import {
 } from "../src/thresholds";
 import type { QuickTest } from "../src/model";
 import { defaultTest } from "../src/model";
-import { requestConfig } from "../src/requests";
+import { requestConfig, scenarioConfig } from "../src/requests";
 import { requestEditor } from "./request";
 import type { ClientMessage } from "../src/model";
 import {
@@ -257,7 +257,10 @@ export function workloadBuilder(
       } else
         card.append(
           action("Customize scenario request", () => {
-            scenario.request = { ...defaultTest, ...requestConfig(config) };
+            scenario.request = {
+              ...defaultTest,
+              ...requestConfig(scenarioConfig(config, scenario)),
+            };
             render();
           }),
         );

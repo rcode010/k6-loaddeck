@@ -25,6 +25,12 @@ export function scenarioConfig(c: QuickTest, s: Scenario): QuickTest {
     scenarios: undefined,
     thresholds: {},
     thresholdRules: [],
+    checks: s.request
+      ? s.request.checks
+      : c.checks?.filter(
+          (check) =>
+            !check.scenarios?.length || check.scenarios.includes(s.name),
+        ),
   };
 }
 export function activeRequests(c: QuickTest): QuickTest[] {
