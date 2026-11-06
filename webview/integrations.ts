@@ -281,6 +281,9 @@ export function integrationBuilder(
           button("Store secret securely", () =>
             post({ type: "credential", name: a.secretVariable }),
           ),
+          button("Delete stored secret", () =>
+            post({ type: "deleteCredential", name: a.secretVariable }),
+          ),
         );
       if (["apiKey", "cookie"].includes(a.mode))
         authentication.append(

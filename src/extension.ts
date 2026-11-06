@@ -340,16 +340,38 @@ export function activate(context: vscode.ExtensionContext): void {
       });
       return;
     }
-    if (message.type === "credential") {
+    if (message.type === "credential" || message.type === "deleteCredential") {
       if (!/^[A-Z_][A-Z0-9_]*$/.test(message.name))
         throw new Error("Use an uppercase runtime variable name.");
+      const names = context.globalState.get<string[]>("credentialNames", []);
+      if (message.type === "deleteCredential") {
+        if (
+          (await vscode.window.showWarningMessage(
+            `Delete the protected value for ${message.name}? Environment-variable fallback remains available.`,
+            { modal: true },
+            "Delete stored value",
+          )) === "Delete stored value"
+        ) {
+          await context.secrets.delete(`variable:${message.name}`);
+          await context.globalState.update(
+            "credentialNames",
+            names.filter((name) => name !== message.name),
+          );
+        }
+        return;
+      }
       const secret = await vscode.window.showInputBox({
         prompt: `Protected value for ${message.name}`,
         password: true,
         ignoreFocusOut: true,
       });
-      if (secret !== undefined)
+      if (secret !== undefined) {
         await context.secrets.store(`variable:${message.name}`, secret);
+        await context.globalState.update(
+          "credentialNames",
+          [...new Set([...names, message.name])].sort(),
+        );
+      }
       return;
     }
     if (message.type === "chooseFile") {
@@ -523,6 +545,28 @@ export function activate(context: vscode.ExtensionContext): void {
           : "Use an uppercase variable name.",
     });
     if (name) await handle({ type: "credential", name });
+  });
+  register("loaddeck.manageCredentials", async () => {
+    const names = context.globalState.get<string[]>("credentialNames", []);
+    if (!names.length) {
+      await vscode.window.showInformationMessage(
+        "No protected LoadDeck values are stored yet.",
+      );
+      return;
+    }
+    const name = await vscode.window.showQuickPick(names, {
+      placeHolder: "Select a protected variable to update or delete",
+    });
+    if (!name) return;
+    const action = await vscode.window.showQuickPick(
+      ["Update value", "Delete stored value"],
+      { placeHolder: name },
+    );
+    if (action)
+      await handle({
+        type: action === "Update value" ? "credential" : "deleteCredential",
+        name,
+      });
   });
   register("loaddeck.open", () => open());
   register("loaddeck.quick", () => open());

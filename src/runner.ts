@@ -202,8 +202,6 @@ export class K6Runner {
       const metricsFile = path.join(directory, "points.json");
       const summaryFile = path.join(directory, "summary.json");
       const scriptFile = script ?? path.join(directory, "test.js");
-      if (config)
-        await writeFile(scriptFile, generateScript(config), { mode: 0o600 });
       const environment: NodeJS.ProcessEnv = {
         ...process.env,
         ...("environment" in input ? input.environment : {}),
@@ -281,6 +279,43 @@ export class K6Runner {
       }
       const args = ["run"];
       if (config) {
+        const certificateNames = requests.flatMap((r) =>
+          r.authentication?.mode === "mtls"
+            ? [
+                r.authentication.certificateVariable,
+                r.authentication.privateKeyVariable,
+              ]
+            : [],
+        );
+        const secretNames = /^k6 v?2\.3\./i.test(version)
+          ? credentialVariables(config).filter((name) => {
+              const value = environment[name];
+              return (
+                value &&
+                value === value.trim() &&
+                !/[\r\n\0]/.test(value) &&
+                !certificateNames.includes(name)
+              );
+            })
+          : [];
+        if (secretNames.length) {
+          const secretFile = path.join(directory, "secrets.txt");
+          await writeFile(
+            secretFile,
+            secretNames
+              .map((name) => `${name}=${environment[name]}`)
+              .join("\n"),
+            { mode: 0o600 },
+          );
+          args.push("--secret-source", `file=${secretFile}`);
+          for (const name of secretNames) delete environment[name];
+        }
+        run.credentialSource = secretNames.length
+          ? "k6-secret-source"
+          : "environment";
+        await writeFile(scriptFile, generateScript(config, secretNames), {
+          mode: 0o600,
+        });
         const configFile = path.join(directory, "config.json");
         await writeFile(configFile, "{}", { mode: 0o600 });
         args.push("--config", configFile);

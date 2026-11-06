@@ -1,6 +1,6 @@
 {
   "name": "k6-loaddeck",
-  "displayName": "LoadDeck — k6 Performance Testing",
+  "displayName": "LoadDeck \u2014 k6 Performance Testing",
   "description": "GUI-first local performance testing powered by Grafana k6.",
   "version": "0.1.0",
   "private": true,
@@ -62,7 +62,7 @@
       },
       {
         "command": "loaddeck.runFile",
-        "title": "Run Test File…",
+        "title": "Run Test File\u2026",
         "category": "LoadDeck"
       },
       {
@@ -88,6 +88,11 @@
       {
         "command": "loaddeck.credential",
         "title": "Store Runtime Credential",
+        "category": "LoadDeck"
+      },
+      {
+        "command": "loaddeck.manageCredentials",
+        "title": "Manage Runtime Credentials",
         "category": "LoadDeck"
       }
     ],

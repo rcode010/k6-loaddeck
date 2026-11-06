@@ -9,7 +9,10 @@ import { scenarioConfig } from "./requests";
 import { dataRuntime } from "./data";
 import { defaultScenario, scenarioOptions, checkStatements } from "./workload";
 const json = JSON.stringify;
-export function generateScript(c: QuickTest): string {
+export function generateScript(
+  c: QuickTest,
+  secretNames: string[] = [],
+): string {
   const scenarios = (c.scenarios ?? [defaultScenario(c)]).filter(
     (s) => s.enabled,
   );
@@ -49,6 +52,7 @@ export function generateScript(c: QuickTest): string {
     "import encoding from 'k6/encoding';",
     "import exec from 'k6/execution';",
   ];
+  if (secretNames.length) imports.push("import secrets from 'k6/secrets';");
   if (requests.some((r) => r.protocol?.kind === "ws"))
     imports.push("import ws from 'k6/ws';");
   if (requests.some((r) => r.protocol?.kind === "grpc"))
@@ -69,7 +73,7 @@ export function generateScript(c: QuickTest): string {
     if (r.protocol?.kind === "grpc")
       init += `const client_${index} = new grpc.Client();\nclient_${index}.load(${json([...r.protocol.importPaths, path.dirname(r.protocol.protoFile)])}, ${json(path.basename(r.protocol.protoFile))});\n`;
   }
-  const helper = `function required(name) { const value = __ENV[name]; if (!value) throw new Error('Missing runtime variable: ' + name); return value; }
+  const helper = `${secretNames.length ? `const protectedValues = Object.create(null); let protectedReady = false;\nasync function loadProtected() { if (protectedReady) return; for (const name of ${json(secretNames)}) protectedValues[name] = await secrets.get(name); protectedReady = true; }\n` : ""}function required(name) { const value = ${secretNames.length ? "protectedValues[name] || " : ""}__ENV[name]; if (!value) throw new Error('Missing runtime variable: ' + name); return value; }
 function safeCheck(fn) { try { return Boolean(fn()); } catch { return false; } }
 function headerValue(response, name) { const headers = response.headers || {}; const key = Object.keys(headers).find(key => key.toLowerCase() === name.toLowerCase()); return key === undefined ? undefined : headers[key]; }
 function utf8Length(value) { let bytes = 0; for (let index = 0; index < value.length; index++) { const point = value.codePointAt(index); bytes += point <= 127 ? 1 : point <= 2047 ? 2 : point <= 65535 ? 3 : 4; if (point > 65535) index++; } return bytes; }
@@ -169,8 +173,8 @@ function oauth(id, url, username, secret, scope, audience) { const cached = oaut
         operation = `  client_${index}.connect(target.replace(/^grpcs?:\\/\\//, ''), { plaintext: ${c.protocol!.plaintext}, timeout: ${json(c.protocol!.timeout ?? "30s")}${auth?.mode === "mtls" ? `, tls: { cert: required(${json(auth.certificateVariable)}), key: required(${json(auth.privateKeyVariable)}) }` : ""} });\n  try { const response = client_${index}.invoke(${json(c.protocol!.grpcMethod)}, jsonTemplate(JSON.parse(${json(c.protocol!.message)}), row), { metadata:headers, timeout: ${json(c.protocol!.timeout ?? "30s")}, tags:{name:${json(s.name)}} });\n  ${assertions || "check(response, {'gRPC status OK': r => r && r.status === grpc.StatusOK});"}\n  } finally { client_${index}.close(); }\n`;
       else
         operation = `  const response = http.request(${json(c.method)}, target, ${["form", "multipart"].includes(c.bodyMode) ? "payload" : c.body ? (c.bodyMode === "json" ? `JSON.stringify(jsonTemplate(JSON.parse(${json(c.body)}), row))` : `template(${json(c.body)}, row)`) : "null"}, { headers, ${auth && ["digest", "ntlm"].includes(auth.mode) ? `auth:${json(auth.mode)},` : ""}tags:{name:${json(s.name)}}, timeout:${json(c.protocol?.timeout ?? "30s")}, redirects:${c.protocol?.redirects ?? 10} });\n  ${assertions}\n`;
-      return `export function scenario_${index}() {\n  ${setup}${operation}${s.executor.includes("arrival-rate") ? "" : `  sleep(${c.sleep});\n`}}`;
+      return `export ${secretNames.length ? "async " : ""}function scenario_${index}() {\n  ${secretNames.length ? "await loadProtected();\n  " : ""}${setup}${operation}${s.executor.includes("arrival-rate") ? "" : `  sleep(${c.sleep});\n`}}`;
     })
     .join("\n\n");
-  return `${imports.join("\n")}\n\n${init}\n${helper}${dataRuntime}${csvHelper}\n${functions}\n\nexport default scenario_0;\n\nexport function handleSummary(data) {\n  return __ENV.LOADDECK_SUMMARY ? { [__ENV.LOADDECK_SUMMARY]: JSON.stringify(data) } : { stdout: JSON.stringify(data, null, 2) };\n}\n`;
+  return `${imports.join("\n")}\n\n${helper}${dataRuntime}${csvHelper}\n${init}\n${functions}\n\nexport default scenario_0;\n\nexport function handleSummary(data) {\n  return __ENV.LOADDECK_SUMMARY ? { [__ENV.LOADDECK_SUMMARY]: JSON.stringify(data) } : { stdout: JSON.stringify(data, null, 2) };\n}\n`;
 }

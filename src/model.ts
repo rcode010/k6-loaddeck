@@ -129,6 +129,7 @@ export interface Run {
     | "threshold-abort-possible"
     | "incomplete";
   protocol?: string;
+  credentialSource?: "k6-secret-source" | "environment";
   scenarioMetrics?: Record<string, Metrics>;
   scenarioSeries?: Record<string, Bucket[]>;
   scenarioProtocolMetrics?: Record<string, Record<string, number>>;
@@ -167,7 +168,7 @@ export type ClientMessage =
       id: string;
       format?: "json" | "csv" | "html";
     }
-  | { type: "credential"; name: string }
+  | { type: "credential" | "deleteCredential"; name: string }
   | {
       type: "inspectProto";
       file: string;
