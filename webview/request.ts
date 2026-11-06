@@ -31,6 +31,8 @@ export function requestEditor(
         input.append(o);
       }
     input.setAttribute("aria-label", label);
+    if (label === "Request target URL") input.dataset.bindingTarget = "url";
+    if (label === "Request payload") input.dataset.bindingTarget = "body";
     input.value = value;
     input.addEventListener("change", () => {
       try {
@@ -86,5 +88,24 @@ export function requestEditor(
     checks.dispatchEvent(new Event("refreshBuilder")),
   );
   root.append(integrations, checks);
+  root.addEventListener("insertBinding", (event) => {
+    event.stopPropagation();
+    const { target, placeholder } = (
+      event as CustomEvent<{ target: string; placeholder: string }>
+    ).detail;
+    const input = root.querySelector<HTMLInputElement | HTMLTextAreaElement>(
+      `[data-binding-target="${target}"]`,
+    );
+    if (input) {
+      input.setRangeText(
+        placeholder,
+        input.selectionStart ?? input.value.length,
+        input.selectionEnd ?? input.value.length,
+        "end",
+      );
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      input.focus();
+    }
+  });
   return root;
 }

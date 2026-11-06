@@ -1,4 +1,5 @@
-import { credentialVariables, parseCsv } from "./integrations";
+import { credentialVariables } from "./integrations";
+import { datasetRows, datasetPreview } from "./data";
 import { exportRun } from "./reports";
 import { readFile, stat } from "node:fs/promises";
 import * as vscode from "vscode";
@@ -365,15 +366,17 @@ export function activate(context: vscode.ExtensionContext): void {
       if (uri) {
         let columns: string[] = [];
         let rowCount = 0;
+        let schema: { name: string; type: string }[] = [];
         if (message.purpose === "dataset") {
           if ((await stat(uri.fsPath)).size > 20 * 1024 * 1024)
             throw new Error("Dataset exceeds the 20 MiB limit.");
           const text = await readFile(uri.fsPath, "utf8");
-          const rows = extension === "csv" ? parseCsv(text) : JSON.parse(text);
-          if (!Array.isArray(rows) || !rows.length)
-            throw new Error("Choose a nonempty dataset.");
-          columns = Object.keys(rows[0]);
-          rowCount = rows.length;
+          const preview = datasetPreview(
+            datasetRows(text, { format: extension === "csv" ? "csv" : "json" }),
+          );
+          schema = preview.columns;
+          columns = schema.map((column) => column.name);
+          rowCount = preview.rowCount;
         }
         await panel?.webview.postMessage({
           type: "fileChosen",
@@ -383,6 +386,7 @@ export function activate(context: vscode.ExtensionContext): void {
           format: extension,
           columns,
           rowCount,
+          schema,
         });
       }
       return;

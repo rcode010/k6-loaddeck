@@ -31,6 +31,9 @@ export interface Authentication {
   privateKeyVariable: string;
 }
 export interface Dataset {
+  types?: Record<string, "string" | "number" | "boolean" | "json">;
+  columns?: { name: string; type: string }[];
+  rowCount?: number;
   file: string;
   format: "json" | "csv";
   strategy: "round-robin" | "random" | "per-vu" | "unique";
@@ -187,6 +190,18 @@ export function validateIntegrations(c: QuickTest): void {
       Object.values(d.variables).some((v) => typeof v !== "string")
     )
       throw new Error("Dataset variables must have string values.");
+    if (
+      d.types &&
+      (typeof d.types !== "object" ||
+        Array.isArray(d.types) ||
+        Object.entries(d.types).some(
+          ([name, type]) =>
+            !name || !["string", "number", "boolean", "json"].includes(type),
+        ))
+    )
+      throw new Error(
+        "Dataset schema must map column names to string, number, boolean or json.",
+      );
   }
   if (c.outputs) {
     if (!Array.isArray(c.outputs) || c.outputs.length > 4)

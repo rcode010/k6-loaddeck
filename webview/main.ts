@@ -194,6 +194,8 @@ function configForm(): HTMLElement {
   const advanced = element("details");
   advanced.append(element("summary", "Advanced request options"));
   const body = element("textarea");
+  body.dataset.bindingTarget = "body";
+  url.dataset.bindingTarget = "url";
   body.value = draft.body;
   body.rows = 5;
   body.placeholder = "Optional request body";
@@ -327,6 +329,24 @@ function configForm(): HTMLElement {
     button("Save as k6 Script", () => perform("save")),
   );
   form.append(target, workload, advanced, error, actions);
+  form.addEventListener("insertBinding", (event) => {
+    const { target, placeholder } = (
+      event as CustomEvent<{ target: string; placeholder: string }>
+    ).detail;
+    const control = form.querySelector<HTMLInputElement | HTMLTextAreaElement>(
+      `[data-binding-target="${target}"]`,
+    );
+    if (control) {
+      control.setRangeText(
+        placeholder,
+        control.selectionStart ?? control.value.length,
+        control.selectionEnd ?? control.value.length,
+        "end",
+      );
+      control.dispatchEvent(new Event("change", { bubbles: true }));
+      control.focus();
+    }
+  });
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     perform("run");
@@ -1166,6 +1186,8 @@ window.addEventListener("message", (event: MessageEvent) => {
   else if (data.purpose === "dataset" && config.dataset) {
     config.dataset.file = data.path;
     config.dataset.format = data.format;
+    config.dataset.columns = data.schema;
+    config.dataset.rowCount = data.rowCount;
   } else if (data.purpose === "jsonOutput" || data.purpose === "csvOutput") {
     draft.outputs ??= [];
     draft.outputs.push({

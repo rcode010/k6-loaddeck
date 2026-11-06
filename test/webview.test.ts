@@ -170,6 +170,31 @@ test(
       await page
         .getByRole("button", { name: "Use shared request", exact: true })
         .click();
+      await page.getByText("Test data", { exact: true }).click();
+      await page
+        .getByRole("button", { name: "Enable test data", exact: true })
+        .click();
+      await page
+        .getByLabel("Binding column or JSON path", { exact: true })
+        .fill("id");
+      await page
+        .getByLabel("Binding column or JSON path", { exact: true })
+        .blur();
+      await page
+        .getByLabel("Insert binding into", { exact: true })
+        .selectOption("body");
+      await page
+        .getByRole("button", { name: "Insert dataset binding", exact: true })
+        .click();
+      assert.equal(
+        await page.getByLabel("Request body", { exact: true }).inputValue(),
+        "{{id}}",
+      );
+      await page.getByLabel("Request body", { exact: true }).fill("");
+      await page.getByLabel("Request body", { exact: true }).blur();
+      await page
+        .getByRole("button", { name: "Remove test data", exact: true })
+        .click();
       await page
         .getByLabel("Executor", { exact: true })
         .selectOption("constant-arrival-rate")

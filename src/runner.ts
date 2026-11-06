@@ -2,7 +2,8 @@ import { configuredThresholds, reconcileThresholds } from "./thresholds";
 import { observation, plannedDurationMs } from "./observation";
 import { LogBuffer } from "./logs";
 import { externalEnvironment, supportedExternalOutputs } from "./outputs";
-import { credentialVariables, parseCsv } from "./integrations";
+import { credentialVariables } from "./integrations";
+import { datasetRows } from "./data";
 import { spawn, execFile, type ChildProcess } from "node:child_process";
 import { promisify } from "node:util";
 import {
@@ -261,20 +262,7 @@ export class K6Runner {
               await file.close();
             }
             const text = await readFile(request.dataset.file, "utf8");
-            const rows =
-              request.dataset.format === "json"
-                ? JSON.parse(text)
-                : parseCsv(text);
-            if (
-              !Array.isArray(rows) ||
-              !rows.length ||
-              rows.some(
-                (row) => !row || typeof row !== "object" || Array.isArray(row),
-              )
-            )
-              throw new Error(
-                "Dataset must contain a nonempty array of row objects.",
-              );
+            datasetRows(text, request.dataset);
           }
         }
       }

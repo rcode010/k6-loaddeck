@@ -6,6 +6,7 @@ import {
 import path from "node:path";
 import type { QuickTest } from "./model";
 import { scenarioConfig } from "./requests";
+import { dataRuntime } from "./data";
 import { defaultScenario, scenarioOptions, checkStatements } from "./workload";
 const json = JSON.stringify;
 export function generateScript(c: QuickTest): string {
@@ -62,7 +63,7 @@ export function generateScript(c: QuickTest): string {
     init += `options.tlsAuth = [${certificates.map((r) => `{ domains: [${json(new URL(r.url).hostname)}], cert: required(${json(r.authentication!.certificateVariable)}), key: required(${json(r.authentication!.privateKeyVariable)}) }`).join(",")}];\n`;
   for (const [index, r] of requests.entries()) {
     if (r.dataset?.file)
-      init += `const rows_${index} = new SharedArray(${json("LoadDeck dataset " + index)}, () => ${r.dataset.format === "json" ? `JSON.parse(open(${json(r.dataset.file)}))` : `parseCsv(open(${json(r.dataset.file)}))`});\n`;
+      init += `const rows_${index} = new SharedArray(${json("LoadDeck dataset " + index)}, () => ${r.dataset.format === "json" ? `JSON.parse(open(${json(r.dataset.file)}))` : `parseCsv(open(${json(r.dataset.file)}))`}.map(row => dataRow(row, JSON.parse(${json(json(r.dataset.types ?? {}))}))));\n`;
     if (r.bodyMode === "multipart" && r.upload)
       init += `const uploadData_${index} = open(${json(r.upload.path)}, 'b');\n`;
     if (r.protocol?.kind === "grpc")
@@ -120,7 +121,7 @@ function oauth(id, url, username, secret, scope, audience) { const cached = oaut
             : strategy === "per-vu"
               ? "exec.vu.idInTest - 1"
               : "exec.scenario.iterationInTest";
-        row = `if (!rows_${index}.length) throw new Error('Dataset is empty');\n  const position = ${position};\n  ${c.dataset.exhaustion === "fail" ? `if (position >= rows_${index}.length) throw new Error('Dataset exhausted');` : ""}\n  const row = { ...JSON.parse(${json(json(c.dataset.variables))}), ...rows_${index}[position % rows_${index}.length] };`;
+        row = `if (!rows_${index}.length) throw new Error('Dataset is empty');\n  const position = ${position};\n  ${c.dataset.exhaustion === "fail" ? `if (position >= rows_${index}.length) exec.test.abort('Dataset exhausted');` : ""}\n  const row = { ...JSON.parse(${json(json(c.dataset.variables))}), ...rows_${index}[position % rows_${index}.length] };`;
       }
       let setup = `${row}\n  let target = template(${json(c.url)}, row);\n  const headers = Object.assign(Object.create(null), { ${headers} });\n`;
       if (c.bodyMode === "json" && c.body)
@@ -161,5 +162,5 @@ function oauth(id, url, username, secret, scope, audience) { const cached = oaut
       return `export function scenario_${index}() {\n  ${setup}${operation}${s.executor.includes("arrival-rate") ? "" : `  sleep(${c.sleep});\n`}}`;
     })
     .join("\n\n");
-  return `${imports.join("\n")}\n\n${init}\n${helper}${csvHelper}\n${functions}\n\nexport default scenario_0;\n\nexport function handleSummary(data) {\n  return __ENV.LOADDECK_SUMMARY ? { [__ENV.LOADDECK_SUMMARY]: JSON.stringify(data) } : { stdout: JSON.stringify(data, null, 2) };\n}\n`;
+  return `${imports.join("\n")}\n\n${init}\n${helper}${dataRuntime}${csvHelper}\n${functions}\n\nexport default scenario_0;\n\nexport function handleSummary(data) {\n  return __ENV.LOADDECK_SUMMARY ? { [__ENV.LOADDECK_SUMMARY]: JSON.stringify(data) } : { stdout: JSON.stringify(data, null, 2) };\n}\n`;
 }

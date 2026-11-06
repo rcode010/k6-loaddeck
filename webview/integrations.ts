@@ -45,6 +45,8 @@ function field(
     if (typeof value === "boolean") e.checked = value;
   }
   e.setAttribute("aria-label", label);
+  if (["Message to send", "Request message (JSON)"].includes(label))
+    e.dataset.bindingTarget = "message";
   e.value = String(value);
   e.addEventListener("change", () =>
     update(
@@ -306,6 +308,60 @@ export function integrationBuilder(
           "p",
           "Round-robin and unique use the scenario iteration index. Unique is scoped to each scenario, not globally across scenarios. Per-VU maps the VU ID to a row. Repeat wraps at the end; fail stops with a runtime error.",
         ),
+      );
+      if (d.rowCount)
+        data.append(
+          node(
+            "p",
+            `${d.rowCount} rows. Preview values are redacted; column names and inferred types are shown below.`,
+          ),
+        );
+      const columns = [
+        ...new Set([
+          ...(d.columns ?? []).map((column) => column.name),
+          ...Object.keys(d.types ?? {}),
+        ]),
+      ];
+      for (const name of columns) {
+        const inferred =
+          d.columns?.find((column) => column.name === name)?.type ?? "unknown";
+        data.append(
+          field(
+            `${name} · inferred ${inferred}`,
+            d.types?.[name] ?? "infer",
+            (v) => {
+              d.types ??= {};
+              if (v === "infer") delete d.types[name];
+              else
+                Object.defineProperty(d.types, name, {
+                  value: v,
+                  enumerable: true,
+                  writable: true,
+                  configurable: true,
+                });
+            },
+            ["infer", "string", "number", "boolean", "json"],
+          ),
+        );
+      }
+      let column = columns[0] ?? "";
+      let destination = "url";
+      data.append(
+        field("Binding column or JSON path", column, (v) => (column = v)),
+        field("Insert binding into", destination, (v) => (destination = v), [
+          "url",
+          "body",
+          "message",
+        ]),
+        button("Insert dataset binding", () => {
+          if (!/^[A-Za-z0-9_.]+$/.test(column)) return;
+          root.dispatchEvent(
+            new CustomEvent("insertBinding", {
+              bubbles: true,
+              detail: { target: destination, placeholder: `{{${column}}}` },
+            }),
+          );
+        }),
       );
       const variables = node("textarea");
       variables.value = JSON.stringify(d.variables, null, 2);
