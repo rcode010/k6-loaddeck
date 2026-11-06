@@ -14,10 +14,13 @@ import {
   executors,
   checkKinds,
   defaultScenario,
+  changeExecutor,
+  type Executor,
   type Scenario,
   type CheckRule,
   type ThresholdRule,
 } from "../src/workload";
+import { schedule } from "./schedule";
 
 function node<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -90,6 +93,11 @@ export function workloadBuilder(
   for (const metric of catalog)
     if (!available.has(metric.name)) available.set(metric.name, metric);
   const root = node("div");
+  const executorDrafts = new WeakMap<
+    Scenario,
+    Map<Executor, Partial<Scenario>>
+  >();
+  const timeline = node("div");
   function render(): void {
     const opened = new Set(
       [...root.querySelectorAll("details[open]")].map(
@@ -120,7 +128,9 @@ export function workloadBuilder(
           "Executor",
           scenario.executor,
           (v) => {
-            set("executor", v);
+            const drafts = executorDrafts.get(scenario) ?? new Map();
+            executorDrafts.set(scenario, drafts);
+            changeExecutor(scenario, v as Executor, drafts);
             render();
           },
           [...executors],
@@ -281,7 +291,9 @@ export function workloadBuilder(
           preAllocatedVUs: 1,
           maxVUs: 10,
           startVUs: 0,
-          stages: [{ duration: config.duration, target: config.vus }],
+          stages: defaultScenario(config).stages ?? [
+            { duration: config.duration, target: config.vus },
+          ],
           gracefulRampDown: "5s",
         };
         config.scenarios ??= [];
@@ -296,7 +308,11 @@ export function workloadBuilder(
           render();
         }),
       );
-    if (!requestOnly) root.append(scenarios);
+    if (!requestOnly) {
+      timeline.replaceChildren(schedule(config));
+      scenarios.append(timeline);
+      root.append(scenarios);
+    }
     const checks = section(
       "Checks",
       "Checks validate responses. They change the exit result only when a checks threshold is configured.",
@@ -558,5 +574,8 @@ export function workloadBuilder(
   }
   render();
   root.addEventListener("refreshBuilder", render);
+  root.addEventListener("change", () => {
+    if (!requestOnly) timeline.replaceChildren(schedule(config));
+  });
   return root;
 }

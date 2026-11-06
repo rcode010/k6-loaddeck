@@ -36,6 +36,26 @@ export interface Scenario {
   url: string;
   tags: Record<string, string>;
 }
+export const executorFields: Record<Executor, (keyof Scenario)[]> = {
+  "shared-iterations": ["vus", "iterations", "maxDuration"],
+  "per-vu-iterations": ["vus", "iterations", "maxDuration"],
+  "constant-vus": ["vus", "duration"],
+  "ramping-vus": ["startVUs", "stages", "gracefulRampDown"],
+  "constant-arrival-rate": [
+    "rate",
+    "timeUnit",
+    "duration",
+    "preAllocatedVUs",
+    "maxVUs",
+  ],
+  "ramping-arrival-rate": [
+    "startRate",
+    "timeUnit",
+    "stages",
+    "preAllocatedVUs",
+    "maxVUs",
+  ],
+};
 export function scenarioOptions(
   s: Scenario,
   index: number,
@@ -48,27 +68,7 @@ export function scenarioOptions(
     tags: s.tags,
     ...(s.env ? { env: s.env } : {}),
   };
-  const keys: Record<Executor, string[]> = {
-    "shared-iterations": ["vus", "iterations", "maxDuration"],
-    "per-vu-iterations": ["vus", "iterations", "maxDuration"],
-    "constant-vus": ["vus", "duration"],
-    "ramping-vus": ["startVUs", "stages", "gracefulRampDown"],
-    "constant-arrival-rate": [
-      "rate",
-      "timeUnit",
-      "duration",
-      "preAllocatedVUs",
-      "maxVUs",
-    ],
-    "ramping-arrival-rate": [
-      "startRate",
-      "timeUnit",
-      "stages",
-      "preAllocatedVUs",
-      "maxVUs",
-    ],
-  };
-  for (const key of keys[s.executor]) {
+  for (const key of executorFields[s.executor]) {
     const value = s[key as keyof Scenario];
     if (value !== undefined && value !== "") result[key] = value;
   }
@@ -222,3 +222,36 @@ export type { CheckRule } from "./checks";
 
 export { compileThresholds } from "./thresholds";
 export type { ThresholdRule } from "./thresholds";
+
+export function changeExecutor(
+  s: Scenario,
+  next: Executor,
+  drafts: Map<Executor, Partial<Scenario>>,
+): void {
+  drafts.set(
+    s.executor,
+    structuredClone(
+      Object.fromEntries(
+        executorFields[s.executor].map((key) => [key, s[key]]),
+      ),
+    ),
+  );
+  const defaults: Partial<Scenario> = {
+    vus: 1,
+    iterations: 1,
+    duration: "10s",
+    maxDuration: "10m",
+    startVUs: 0,
+    rate: 1,
+    startRate: 0,
+    timeUnit: "1s",
+    preAllocatedVUs: 1,
+    maxVUs: 10,
+    stages: [{ duration: "10s", target: 1 }],
+    gracefulRampDown: "5s",
+  };
+  const values = drafts.get(next) ?? defaults;
+  for (const key of executorFields[next])
+    Object.assign(s, { [key]: structuredClone(values[key]) });
+  s.executor = next;
+}

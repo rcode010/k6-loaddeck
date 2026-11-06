@@ -182,6 +182,37 @@ test(
           );
         });
       await page.getByLabel("Iteration starts per time unit").fill("2");
+      await page.getByLabel("Iteration starts per time unit").blur();
+      await page
+        .getByLabel("Executor", { exact: true })
+        .selectOption("ramping-vus");
+      await page.getByLabel("Target", { exact: true }).fill("7");
+      await page.getByLabel("Target", { exact: true }).blur();
+      await page
+        .getByLabel("Executor", { exact: true })
+        .selectOption("ramping-arrival-rate");
+      await page.getByLabel("Target", { exact: true }).fill("12");
+      await page.getByLabel("Target", { exact: true }).blur();
+      await page
+        .getByLabel("Executor", { exact: true })
+        .selectOption("ramping-vus");
+      assert.equal(
+        await page.getByLabel("Target", { exact: true }).inputValue(),
+        "7",
+      );
+      await page
+        .getByLabel("Executor", { exact: true })
+        .selectOption("constant-arrival-rate");
+      assert.equal(
+        await page.getByLabel("Iteration starts per time unit").inputValue(),
+        "2",
+      );
+      await page
+        .getByRole("img", {
+          name: "Requested scenario timelines",
+          exact: false,
+        })
+        .waitFor();
       await page.getByText("Protocol", { exact: true }).first().click();
       await page.getByLabel("Protocol", { exact: true }).selectOption("ws");
       await page.getByLabel("Message to send").fill("hello");

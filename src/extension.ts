@@ -11,14 +11,11 @@ import {
   type Screen,
   type ViewState,
 } from "./model";
-import {
-  durationSeconds,
-  generateScript,
-  validateQuickTest,
-} from "./definition";
+import { generateScript, validateQuickTest } from "./definition";
 import { discover, K6Runner } from "./runner";
 import { HistoryStore } from "./history";
 import { activeRequests } from "./requests";
+import { workloadLoad } from "./load";
 
 class Navigation implements vscode.TreeDataProvider<vscode.TreeItem> {
   getTreeItem(item: vscode.TreeItem): vscode.TreeItem {
@@ -202,42 +199,11 @@ export function activate(context: vscode.ExtensionContext): void {
         )
           return false;
       }
-      const enabledScenarios = (config.scenarios ?? []).filter(
-        (s) => s.enabled,
-      );
-      const scenarioPeak = (s: NonNullable<QuickTest["scenarios"]>[number]) =>
-        Math.max(
-          s.vus ?? 0,
-          s.maxVUs ?? 0,
-          s.preAllocatedVUs ?? 0,
-          s.startVUs ?? 0,
-          ...(s.stages ?? []).map((stage) => stage.target),
-        );
-      const highScenario =
-        enabledScenarios.reduce((total, s) => total + scenarioPeak(s), 0) >
-          50 ||
-        enabledScenarios.some(
-          (s) =>
-            durationSeconds(s.duration ?? s.maxDuration ?? "0s") > 300 ||
-            (s.stages ?? []).reduce(
-              (total, stage) => total + durationSeconds(stage.duration),
-              0,
-            ) > 300 ||
-            (s.iterations ?? 0) *
-              (s.executor === "per-vu-iterations" ? (s.vus ?? 1) : 1) >
-              10000 ||
-            (s.rate ?? s.startRate ?? 0) > 100,
-        );
-      if (
-        settings().get("confirmHighLoad", true) &&
-        (highScenario ||
-          config.vus > 50 ||
-          durationSeconds(config.duration) > 300 ||
-          ["stress", "spike", "soak"].includes(config.testKind))
-      ) {
+      const load = workloadLoad(config);
+      if (settings().get("confirmHighLoad", true) && load.high) {
         if (
           (await vscode.window.showWarningMessage(
-            `This test uses ${config.vus} VUs for ${config.duration}${config.testKind === "stress" ? " per stage, peaking at twice the configured VUs" : ""}. Continue only if the target can accept this load.`,
+            `This schedule may use up to ${load.peakVus} concurrent VUs for ${Math.ceil(load.duration)} seconds including graceful stop${load.peakRate ? `, with up to ${load.peakRate.toFixed(1)} iteration starts/s` : ""}. Continue only if the targets can accept this load.`,
             { modal: true },
             "Run test",
           )) !== "Run test"
