@@ -28,6 +28,7 @@ import {
 import type { Installation, QuickTest, Run } from "./model";
 import { activeRequests } from "./requests";
 import { protoMethods } from "./proto";
+import { supportsScenarioSelection } from "./scripts";
 
 export async function discover(binary: string): Promise<Installation> {
   try {
@@ -87,7 +88,11 @@ export class K6Runner {
     onUpdate: (run: Run) => void,
     input:
       | { config: QuickTest; environment?: Record<string, string> }
-      | { script: string; environment?: Record<string, string> },
+      | {
+          script: string;
+          scenarios?: string[];
+          environment?: Record<string, string>;
+        },
   ): Promise<Run> {
     if (this.disposed) throw new Error("The k6 runner has been disposed.");
     if (this.busy)
@@ -118,7 +123,11 @@ export class K6Runner {
               outputs: undefined,
               externalOutput: undefined,
             }
-          : { script, content: await readFile(script!, "utf8") },
+          : {
+              script,
+              content: await readFile(script!, "utf8"),
+              scenarios: "scenarios" in input ? input.scenarios : undefined,
+            },
       ),
       conditions: config
         ? {
@@ -161,7 +170,9 @@ export class K6Runner {
               })),
             }),
           }
-        : undefined,
+        : "scenarios" in input && input.scenarios
+          ? { selectedScenarios: input.scenarios.join(", ") }
+          : undefined,
       scriptIdentity: script ? fingerprint(path.resolve(script)) : undefined,
       config: config ? safeConfig(config) : undefined,
       rerunnable: config ? !!safeConfig(config) : false,
@@ -278,6 +289,21 @@ export class K6Runner {
         }
       }
       const args = ["run"];
+      if ("scenarios" in input && input.scenarios) {
+        if (!supportsScenarioSelection(version))
+          throw new Error(
+            "Scenario selection requires the verified k6 2.3.x profile.",
+          );
+        if (
+          !input.scenarios.length ||
+          input.scenarios.some(
+            (name) =>
+              typeof name !== "string" || !name || /[,\r\n\0]/.test(name),
+          )
+        )
+          throw new Error("Select valid configured scenario names.");
+        args.push("--scenario", input.scenarios.join(","));
+      }
       if (config) {
         const certificateNames = requests.flatMap((r) =>
           r.authentication?.mode === "mtls"

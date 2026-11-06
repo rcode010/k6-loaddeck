@@ -99,6 +99,11 @@
         "command": "loaddeck.saved",
         "title": "View Saved Tests",
         "category": "LoadDeck"
+      },
+      {
+        "command": "loaddeck.runScenarios",
+        "title": "Run Selected Script Scenarios\u2026",
+        "category": "LoadDeck"
       }
     ],
     "viewsContainers": {

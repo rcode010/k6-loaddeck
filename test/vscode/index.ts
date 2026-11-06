@@ -19,6 +19,7 @@ export async function run(): Promise<void> {
     "check",
     "saved",
     "manageCredentials",
+    "runScenarios",
   ])
     assert.ok(commands.includes(`loaddeck.${command}`), command);
   for (const command of [

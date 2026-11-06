@@ -21,6 +21,7 @@ import { protoMethods } from "./proto";
 import { savedScript } from "./saved-script";
 import { TestTemplates, type SavedTest } from "./templates";
 import { fingerprint } from "./definition";
+import { inspectScenarios, supportsScenarioSelection } from "./scripts";
 
 class Navigation implements vscode.TreeDataProvider<vscode.TreeItem> {
   getTreeItem(item: vscode.TreeItem): vscode.TreeItem {
@@ -238,7 +239,9 @@ export function activate(context: vscode.ExtensionContext): void {
     return true;
   };
   const execute = async (
-    input: { config: QuickTest; templateId?: string } | { script: string },
+    input:
+      | { config: QuickTest; templateId?: string }
+      | { script: string; selectScenarios?: boolean },
   ) => {
     if (busy || runner.busy)
       throw new Error("A test is already running or awaiting confirmation.");
@@ -262,6 +265,33 @@ export function activate(context: vscode.ExtensionContext): void {
         const value = await context.secrets.get(`variable:${name}`);
         if (value) environment[name] = value;
       }
+      let scenarios: string[] | undefined;
+      if ("script" in input && input.selectScenarios) {
+        if (!supportsScenarioSelection(state.installation.version))
+          throw new Error(
+            "Scenario selection is verified for k6 2.3.x. Use Run Test File to run every original scenario on other binaries.",
+          );
+        const names = await inspectScenarios(
+          binary(),
+          input.script,
+          environment,
+        );
+        if (!names.length)
+          throw new Error(
+            "This script has no named scenarios. Use Run Test File for its original default workload.",
+          );
+        const chosen = await vscode.window.showQuickPick(
+          names.map((label) => ({ label, picked: true })),
+          {
+            canPickMany: true,
+            placeHolder:
+              "Run only these scenarios; executor, timing, environment and load stay unchanged",
+          },
+        );
+        if (!chosen) return;
+        if (!chosen.length) throw new Error("Select at least one scenario.");
+        scenarios = chosen.map((item) => item.label);
+      }
       await open("run");
       let persisted = false;
       const result = await runner.run(
@@ -276,7 +306,7 @@ export function activate(context: vscode.ExtensionContext): void {
             void history.save({ ...run }).catch(report);
           }
         },
-        config ? { config, environment } : { ...input, environment },
+        config ? { config, environment } : { ...input, scenarios, environment },
       );
       if ("templateId" in input && input.templateId) {
         result.templateId = input.templateId;
@@ -328,7 +358,7 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     }
   };
-  const runFile = async (uri?: vscode.Uri) => {
+  const runFile = async (uri?: vscode.Uri, selectScenarios = false) => {
     if (!uri) {
       const selected = await vscode.window.showOpenDialog({
         canSelectMany: false,
@@ -346,7 +376,7 @@ export function activate(context: vscode.ExtensionContext): void {
     );
     if (document?.isDirty && !(await document.save()))
       throw new Error("Save the script before running it.");
-    await execute({ script: uri.fsPath });
+    await execute({ script: uri.fsPath, selectScenarios });
   };
   const handle = async (raw: unknown) => {
     if (
@@ -667,6 +697,7 @@ export function activate(context: vscode.ExtensionContext): void {
     await check();
   });
   register("loaddeck.runFile", () => runFile());
+  register("loaddeck.runScenarios", () => runFile(undefined, true));
   register("loaddeck.runCurrent", (uri?: vscode.Uri) =>
     runFile(uri ?? vscode.window.activeTextEditor?.document.uri),
   );
