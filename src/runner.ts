@@ -327,14 +327,21 @@ export class K6Runner {
         onUpdate({ ...run });
       };
       let outputError = false;
+      let logBytes = 0;
       const log = (chunk: string) => {
         if (
           config?.externalOutput?.enabled &&
           /level=error|connection refused|couldn.t flush/i.test(chunk)
         )
           outputError = true;
-        run.logs.push(redactLog(chunk, secrets));
-        if (run.logs.length > 200) run.logs.splice(0, run.logs.length - 200);
+        const value = redactLog(chunk, secrets);
+        run.logs.push(value);
+        logBytes += Buffer.byteLength(value, "utf8");
+        while (run.logs.length > 200 || logBytes > 65536) {
+          const removed = run.logs.shift();
+          if (removed !== undefined)
+            logBytes -= Buffer.byteLength(removed, "utf8");
+        }
       };
       if (this.disposed) throw new Error("Extension is shutting down.");
       const child = spawn(binary, args, {
